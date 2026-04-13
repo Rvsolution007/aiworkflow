@@ -591,33 +591,60 @@ class FlowExecutor {
   async _googleLogin(page, credential) {
     logger.info('Performing Google login...');
 
-    // Wait for email input
     try {
-      await page.waitForSelector('input[type="email"]', { timeout: 10000, visible: true });
-      await sleep(randomInt(500, 1500));
+      // Detect which page we're on: email, password, or account chooser
+      await sleep(2000);
 
-      // Enter email
-      await this.human.type('input[type="email"]', credential.username);
-      await sleep(randomInt(500, 1000));
+      // Check if password field is already visible (Google remembers email from session)
+      const hasPassword = await page.$('input[type="password"]').then(el => !!el).catch(() => false);
+      const hasEmail = await page.$('input[type="email"]').then(el => !!el).catch(() => false);
+      const hasAccountList = await page.evaluate(() => {
+        return document.body.innerText.toLowerCase().includes('choose an account');
+      }).catch(() => false);
 
-      // Click Next
-      await this.human.clickText('Next');
-      await sleep(randomInt(2000, 4000));
+      logger.info(`Login page state: email=${hasEmail}, password=${hasPassword}, accountList=${hasAccountList}`);
 
-      // Wait for password input
-      await page.waitForSelector('input[type="password"]', { timeout: 15000, visible: true });
-      await sleep(randomInt(500, 1500));
+      // Case 1: "Choose an account" page — pick the account first
+      if (hasAccountList) {
+        logger.info('Account chooser detected, selecting account...');
+        await this._handleAccountChooser(page);
+        await sleep(3000);
+        // After picking account, re-check the page state
+        return await this._googleLogin(page, credential);
+      }
 
-      // Enter password
-      await this.human.type('input[type="password"]', credential.password);
-      await sleep(randomInt(500, 1000));
+      // Case 2: Email input visible — full login flow
+      if (hasEmail) {
+        logger.info('Email page detected, entering email...');
+        await this.human.type('input[type="email"]', credential.username);
+        await sleep(randomInt(500, 1000));
 
-      // Click Next
-      await this.human.clickText('Next');
+        // Click Next
+        await this.human.clickText('Next');
+        await sleep(randomInt(3000, 5000));
 
-      // Wait for login to complete
-      await page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 30000 }).catch(() => {});
-      await sleep(randomInt(2000, 4000));
+        // Wait for password input to appear
+        await page.waitForSelector('input[type="password"]', { timeout: 15000, visible: true });
+        await sleep(randomInt(500, 1500));
+      }
+
+      // Case 3: Password field visible (either from Case 2 or Google remembered email)
+      const passwordVisible = await page.$('input[type="password"]').then(el => !!el).catch(() => false);
+      if (passwordVisible) {
+        logger.info('Password page detected, entering password...');
+        await page.waitForSelector('input[type="password"]', { timeout: 10000, visible: true });
+        await sleep(randomInt(500, 1000));
+
+        await this.human.type('input[type="password"]', credential.password);
+        await sleep(randomInt(500, 1000));
+
+        // Click Next / Sign in
+        await this.human.clickText('Next');
+        
+        // Wait for login to complete
+        await page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 30000 }).catch(() => {});
+        await sleep(randomInt(2000, 4000));
+      }
 
       // Handle post-login screens (recovery, 2FA, verification prompts)
       await this._handlePostLoginScreens(page);
