@@ -42,21 +42,20 @@ class BrowserManager {
     this.profileDir = path.join(config.paths.profiles, sanitizeFilename(profileName));
     if (!fs.existsSync(this.profileDir)) {
       fs.mkdirSync(this.profileDir, { recursive: true });
-    } else {
-      // Clear any dangling lock files from previous crashes
-      // Note: fs.existsSync returns false for dangling symlinks, so we must just try to unlink
-      const filesToRemove = ['SingletonLock', 'SingletonCookie', 'SingletonSocket'];
-      for (const file of filesToRemove) {
-        try {
-          fs.unlinkSync(path.join(this.profileDir, file));
-        } catch (e) {
-          // Ignore ENOENT (file doesn't exist)
-          if (e.code !== 'ENOENT') {
-            logger.debug(`Could not remove ${file}: ${e.message}`);
-          }
-        }
+    }
+
+    // CRITICAL: Kill any zombie Chromium processes from previous runs
+    this._killZombieChromium();
+
+    // Clear ALL lock files (SingletonLock is a symlink — existsSync returns false for dangling symlinks)
+    const lockFiles = ['SingletonLock', 'SingletonCookie', 'SingletonSocket'];
+    for (const file of lockFiles) {
+      try {
+        fs.unlinkSync(path.join(this.profileDir, file));
+        logger.info(`Removed lock file: ${file}`);
+      } catch (e) {
+        // ENOENT = file doesn't exist — that's fine
       }
-      logger.debug('Cleared Chromium profile lock files if they existed');
     }
 
     // Build launch arguments
@@ -152,8 +151,30 @@ class BrowserManager {
       this.page = null;
     }
   }
-
   // ─── Private Methods ─────────────────────────────────
+
+  /**
+   * Forcefully kill any stray Chromium processes to release locks.
+   * This is critical when running in Docker with persistent volumes,
+   * as a crashed process will leave the profile locked in the volume.
+   */
+  _killZombieChromium() {
+    try {
+      const { execSync } = require('child_process');
+      if (process.platform === 'linux') {
+        logger.debug('Checking for stray Chromium processes...');
+        // Kill any chromium processes (|| true to avoid throwing if none found)
+        execSync('pkill -9 -f chromium || true');
+        execSync('pkill -9 -f chrome || true');
+      } else if (process.platform === 'win32') {
+        try {
+          execSync('taskkill /F /IM chrome.exe /T', { stdio: 'ignore' });
+        } catch (e) {}
+      }
+    } catch (e) {
+      logger.debug('Process kill check completed (non-fatal errors ignored)');
+    }
+  }
 
   /**
    * Build Chrome launch arguments for anti-detection
