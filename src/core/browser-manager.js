@@ -166,7 +166,7 @@ class BrowserManager {
       '--disable-software-rasterizer',
       '--disable-crashpad',
       '--no-zygote',
-      '--single-process',
+      '--disable-features=dbus',
       '--crash-dumps-dir=/tmp/.chromium/crashes',
       `--user-data-dir=${this.profileDir}`,
       // Window size

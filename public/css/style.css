@@ -1771,3 +1771,106 @@ select.input {
   from { opacity: 0; }
   to { opacity: 1; }
 }
+
+/* ─── History Toolbar & Multi-Select ─────────────── */
+.history-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 16px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  margin-bottom: 12px;
+  position: sticky;
+  top: 0;
+  z-index: 5;
+}
+
+.history-select-all {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+
+.history-select-all input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--primary);
+  cursor: pointer;
+}
+
+.history-toolbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.history-count {
+  font-size: 12px;
+  color: var(--primary);
+  font-weight: 600;
+}
+
+.history-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.history-checkbox {
+  display: flex;
+  align-items: center;
+  padding-top: 4px;
+  flex-shrink: 0;
+}
+
+.history-checkbox input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--primary);
+  cursor: pointer;
+}
+
+.history-info {
+  flex: 1;
+  cursor: pointer;
+  min-width: 0;
+}
+
+.btn-icon-danger {
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  padding: 4px 6px;
+  border-radius: 6px;
+  font-size: 14px;
+  opacity: 0.4;
+  transition: all 0.2s;
+  flex-shrink: 0;
+  align-self: center;
+}
+
+.btn-icon-danger:hover {
+  opacity: 1;
+  background: var(--error-bg);
+}
+
+.exec-status-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 20px;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.exec-status-badge.completed { background: rgba(16,185,129,0.12); color: var(--success); }
+.exec-status-badge.failed { background: var(--error-bg); color: var(--error); }
+.exec-status-badge.running { background: rgba(59,130,246,0.12); color: var(--info); }
+.exec-status-badge.queued { background: rgba(245,158,11,0.12); color: var(--warning); }

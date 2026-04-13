@@ -143,5 +143,47 @@ router.get('/:id/screenshot/:stepIndex', (req, res) => {
     res.status(500).json({ success: false, error: err.message });
   }
 });
+/**
+ * DELETE /api/executions/bulk
+ * Delete multiple executions by IDs
+ */
+router.delete('/bulk', (req, res) => {
+  try {
+    const { ids } = req.body;
+    if (!Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({ success: false, error: 'No execution IDs provided' });
+    }
+
+    const db = require('../models/database');
+    const placeholders = ids.map(() => '?').join(',');
+    
+    // Delete steps first
+    db.prepare(`DELETE FROM execution_steps WHERE execution_id IN (${placeholders})`).run(...ids);
+    // Delete executions
+    const result = db.prepare(`DELETE FROM executions WHERE id IN (${placeholders})`).run(...ids);
+
+    res.json({ success: true, deleted: result.changes });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+/**
+ * DELETE /api/executions/:id
+ * Delete a single execution
+ */
+router.delete('/:id', (req, res) => {
+  try {
+    const id = parseInt(req.params.id);
+    const db = require('../models/database');
+    
+    db.prepare('DELETE FROM execution_steps WHERE execution_id = ?').run(id);
+    db.prepare('DELETE FROM executions WHERE id = ?').run(id);
+
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
 
 module.exports = router;

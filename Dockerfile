@@ -33,6 +33,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libasound2 \
     xdg-utils \
     dumb-init \
+    dbus \
     && rm -rf /var/lib/apt/lists/*
 
 # Set Chrome path for Puppeteer
@@ -42,10 +43,12 @@ ENV HEADLESS=true
 # Fix crashpad handler issue
 ENV CHROME_CRASHPAD_PIPE_NAME=
 ENV CHROME_DEVEL_SANDBOX=
+# Disable dbus requirement for Chrome (avoids bus.cc errors)
+ENV DBUS_SESSION_BUS_ADDRESS=/dev/null
 
 # Create app directories with proper permissions
-RUN mkdir -p /app/data/profiles /app/data/screenshots /app/data/logs /app/credentials /tmp/.chromium \
-    && chmod -R 777 /tmp/.chromium
+RUN mkdir -p /app/data/profiles /app/data/screenshots /app/data/logs /app/credentials /tmp/.chromium /run/dbus \
+    && chmod -R 777 /tmp/.chromium /run/dbus
 
 WORKDIR /app
 

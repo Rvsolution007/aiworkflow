@@ -228,6 +228,8 @@ const App = {
     `).join('');
   },
 
+  _selectedExecutions: new Set(),
+
   _renderHistory() {
     const container = document.getElementById('history-list');
 
@@ -250,12 +252,33 @@ const App = {
       cancelled: '🚫',
     };
 
-    container.innerHTML = this.executions.map(exec => `
-      <div class="history-card ${exec.status}" onclick="App.viewExecution(${exec.id})">
+    // Toolbar with Select All + Delete
+    const toolbar = `
+      <div class="history-toolbar">
+        <label class="history-select-all">
+          <input type="checkbox" id="history-select-all" onchange="App.toggleSelectAll(this.checked)">
+          <span>Select All</span>
+        </label>
+        <div class="history-toolbar-actions">
+          <span id="history-selected-count" class="history-count"></span>
+          <button id="history-delete-btn" class="btn btn-sm btn-danger" style="display:none" onclick="App.deleteSelectedExecutions()">
+            🗑️ Delete Selected
+          </button>
+        </div>
+      </div>
+    `;
+
+    const cards = this.executions.map(exec => `
+      <div class="history-card ${exec.status}" id="history-card-${exec.id}">
+        <div class="history-checkbox" onclick="event.stopPropagation()">
+          <input type="checkbox" class="exec-checkbox" data-id="${exec.id}" 
+            onchange="App.toggleExecSelect(${exec.id}, this.checked)" 
+            ${this._selectedExecutions.has(exec.id) ? 'checked' : ''}>
+        </div>
         <div class="history-status-icon ${exec.status}">
           ${statusIcons[exec.status] || '❓'}
         </div>
-        <div class="history-info">
+        <div class="history-info" onclick="App.viewExecution(${exec.id})">
           <div class="history-name">${this._escapeHtml(exec.flow_name)}</div>
           <div class="history-meta">
             <span class="exec-status-badge ${exec.status}">${exec.status}</span>
@@ -268,8 +291,82 @@ const App = {
             </div>
           ` : ''}
         </div>
+        <button class="btn btn-sm btn-icon-danger" onclick="event.stopPropagation(); App.deleteSingleExecution(${exec.id})" title="Delete">
+          🗑️
+        </button>
       </div>
     `).join('');
+
+    container.innerHTML = toolbar + cards;
+    this._updateDeleteBtn();
+  },
+
+  toggleSelectAll(checked) {
+    this._selectedExecutions.clear();
+    if (checked) {
+      this.executions.forEach(e => this._selectedExecutions.add(e.id));
+    }
+    document.querySelectorAll('.exec-checkbox').forEach(cb => cb.checked = checked);
+    this._updateDeleteBtn();
+  },
+
+  toggleExecSelect(id, checked) {
+    if (checked) {
+      this._selectedExecutions.add(id);
+    } else {
+      this._selectedExecutions.delete(id);
+    }
+    // Update Select All checkbox
+    const allCb = document.getElementById('history-select-all');
+    if (allCb) allCb.checked = this._selectedExecutions.size === this.executions.length;
+    this._updateDeleteBtn();
+  },
+
+  _updateDeleteBtn() {
+    const count = this._selectedExecutions.size;
+    const btn = document.getElementById('history-delete-btn');
+    const countEl = document.getElementById('history-selected-count');
+    if (btn) btn.style.display = count > 0 ? 'inline-flex' : 'none';
+    if (countEl) countEl.textContent = count > 0 ? `${count} selected` : '';
+  },
+
+  async deleteSelectedExecutions() {
+    const ids = Array.from(this._selectedExecutions);
+    if (ids.length === 0) return;
+    if (!confirm(`Delete ${ids.length} execution(s)? This cannot be undone.`)) return;
+
+    try {
+      const res = await fetch('/api/executions/bulk', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        this._selectedExecutions.clear();
+        this.toast(`${data.deleted} execution(s) deleted`, 'success');
+        this.navigateTo('history');
+      } else {
+        this.toast(data.error || 'Delete failed', 'error');
+      }
+    } catch (err) {
+      this.toast('Delete failed: ' + err.message, 'error');
+    }
+  },
+
+  async deleteSingleExecution(id) {
+    if (!confirm('Delete this execution?')) return;
+    try {
+      const res = await fetch(`/api/executions/${id}`, { method: 'DELETE' });
+      const data = await res.json();
+      if (data.success) {
+        this._selectedExecutions.delete(id);
+        this.toast('Execution deleted', 'success');
+        this.navigateTo('history');
+      }
+    } catch (err) {
+      this.toast('Delete failed', 'error');
+    }
   },
 
   // ─── Actions ─────────────────────────────────────
