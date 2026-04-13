@@ -366,14 +366,26 @@ class FlowExecutor {
     const credentialKey = params.credential_key;
     logger.debug(`Conditional login with credential: ${credentialKey}`);
 
-    // Check if we're on a login page
+    // Check if we're on a login page or recovery/verification page
     const url = page.url();
     const isLoginPage = url.includes('accounts.google.com') ||
                          url.includes('/signin') ||
                          url.includes('/login');
+    
+    // Also check if we're on a post-login verification page
+    const isVerificationPage = url.includes('myaccount.google.com') ||
+                                url.includes('gds.google.com') ||
+                                url.includes('/challenge/');
 
-    if (!isLoginPage) {
+    if (!isLoginPage && !isVerificationPage) {
       logger.debug('Not on login page, skipping login');
+      return;
+    }
+
+    // If we're on a verification page (already logged in), just dismiss
+    if (isVerificationPage && !isLoginPage) {
+      logger.info('On verification/recovery page, attempting to dismiss...');
+      await this._handlePostLoginScreens(page);
       return;
     }
 
@@ -441,11 +453,122 @@ class FlowExecutor {
       await page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 30000 }).catch(() => {});
       await sleep(randomInt(2000, 4000));
 
+      // Handle post-login screens (recovery, 2FA, verification prompts)
+      await this._handlePostLoginScreens(page);
+
       logger.info('Google login completed');
     } catch (err) {
       logger.error('Google login failed', { error: err.message });
       throw new Error(`Google login failed: ${err.message}`);
     }
+  }
+
+  /**
+   * Handle Google post-login screens (recovery prompts, 2FA, etc.)
+   * These appear after fresh logins and block navigation to the target page.
+   */
+  async _handlePostLoginScreens(page) {
+    const maxAttempts = 6; // Try for up to 30 seconds (6 * 5s)
+    
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+      const url = page.url();
+      logger.debug(`Post-login screen check #${attempt + 1}, URL: ${url}`);
+
+      // If we've reached the target page (admin console, etc.), we're done
+      if (url.includes('admin.google.com') && !url.includes('accounts.google.com')) {
+        logger.info('Reached admin console, post-login screens complete');
+        return;
+      }
+
+      // Check for known post-login prompts and dismiss them
+      const dismissed = await this._tryDismissPrompt(page);
+      
+      if (dismissed) {
+        logger.info('Dismissed a post-login prompt');
+        await sleep(randomInt(2000, 4000));
+        // Wait for any navigation
+        await page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 10000 }).catch(() => {});
+        await sleep(1000);
+        continue;
+      }
+
+      // No known prompt found — wait a bit and check again
+      await sleep(3000);
+    }
+
+    logger.info('Post-login screen handling complete (max attempts reached)');
+  }
+
+  /**
+   * Try to dismiss known Google post-login prompts
+   * Returns true if a prompt was dismissed
+   */
+  async _tryDismissPrompt(page) {
+    // List of buttons/links to dismiss post-login screens
+    // Order matters: try most specific first
+    const dismissTexts = [
+      'Done',           // "Make sure you can always sign in" → Done button
+      'Cancel',         // Recovery prompt → Cancel
+      'Not now',        // 2FA prompt → Not now
+      'Skip',           // Various prompts → Skip
+      'No thanks',      // Recovery email prompt
+      'Confirm',        // Confirm identity
+      'Continue',       // Continue to app
+      'I understand',   // Policy prompts
+      'Remind me later', // Security check
+      'Turn off',       // Turn off less secure apps
+      'Got it',         // Information screens
+    ];
+
+    for (const text of dismissTexts) {
+      try {
+        // Check if the text exists on the page
+        const found = await page.evaluate((t) => {
+          const elements = document.querySelectorAll('button, a, span[role="button"], div[role="button"]');
+          for (const el of elements) {
+            if (el.textContent.trim().toLowerCase().includes(t.toLowerCase()) && el.offsetParent !== null) {
+              return true;
+            }
+          }
+          return false;
+        }, text);
+
+        if (found) {
+          logger.info(`Found dismissable prompt button: "${text}"`);
+          
+          // Try clicking via human behavior first
+          const clicked = await this.human.clickText(text);
+          if (!clicked) {
+            // Fallback: puppeteer text selector
+            try {
+              await page.click(`::-p-text(${text})`, { timeout: 3000 });
+            } catch {
+              continue;
+            }
+          }
+          return true;
+        }
+      } catch (e) {
+        // Ignore and try next
+      }
+    }
+
+    // Also check for "Add recovery phone" or similar pages — try pressing Escape
+    try {
+      const isRecoveryPage = await page.evaluate(() => {
+        const text = document.body.innerText.toLowerCase();
+        return text.includes('recovery') || text.includes('verify') || text.includes('protect your account');
+      });
+
+      if (isRecoveryPage) {
+        logger.info('On recovery/verify page, trying Escape key');
+        await page.keyboard.press('Escape');
+        await sleep(1000);
+        return true;
+      }
+    } catch (e) {}
+
+    return false;
   }
 
   async _genericLogin(page, credential) {
