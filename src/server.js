@@ -86,6 +86,54 @@ async function start() {
     // Initialize database (happens on require)
     require('./models/database');
 
+    // Auto-seed default flow if none exist
+    try {
+      const Flow = require('./models/Flow');
+      const allFlows = Flow.findAll();
+      if (allFlows.length === 0) {
+        logger.info('No flows found — seeding default Google Workspace flow...');
+        Flow.create({
+          name: 'Cancel & Renew AI Ultra Subscription',
+          description: 'Cancel Google AI Ultra subscription and buy a new one from Workspace store',
+          category: 'google-admin',
+          steps: [
+            { action: 'navigate', description: 'Open Google Admin Console', params: { url: 'https://admin.google.com/' } },
+            { action: 'conditional_login', description: 'Login if required', params: { credential_key: 'google_admin' } },
+            { action: 'click', description: 'Click Billing', params: { selector: 'text=Billing' } },
+            { action: 'wait', description: 'Wait for page load', params: { duration: 3000 } },
+            { action: 'click', description: 'Click Subscriptions', params: { selector: 'text=Subscriptions' } },
+            { action: 'wait', description: 'Wait for subscriptions', params: { duration: 3000 } },
+            { action: 'click', description: 'Click AI Ultra Access', params: { selector: 'text=AI Ultra Access' } },
+            { action: 'wait', description: 'Wait for details', params: { duration: 2000 } },
+            { action: 'click', description: 'Click Cancel subscription', params: { selector: 'text=Cancel subscription' } },
+            { action: 'wait', description: 'Wait for dialog', params: { duration: 2000 } },
+            { action: 'click', description: 'Select Too expensive', params: { selector: 'text=Too expensive' } },
+            { action: 'click', description: 'Check confirmation checkbox', params: { selector: 'text=I have read the information above and want to proceed with canceling my subscription' } },
+            { action: 'wait', description: 'Wait', params: { duration: 1000 } },
+            { action: 'type', description: 'Enter email for confirmation', params: { selector: 'input[type="email"], input[name="email"]', text: 'antigravity97732@gmail.com', clear: true } },
+            { action: 'click', description: 'Click Cancel my subscription', params: { selector: 'text=Cancel my subscription' } },
+            { action: 'wait', description: 'Wait 1 min for cancellation', params: { duration: 60000 } },
+            { action: 'navigate', description: 'Open AI Ultra plans page', params: { url: 'https://workspace.google.com/intl/en_in/products/ai-ultra/#plans' } },
+            { action: 'wait', description: 'Wait for plans page', params: { duration: 3000 } },
+            { action: 'click', description: 'Click Buy now', params: { selector: 'text=Buy now' } },
+            { action: 'wait', description: 'Wait for checkout', params: { duration: 3000 } },
+            { action: 'click', description: 'Click Continue', params: { selector: 'text=Continue' } },
+            { action: 'wait', description: 'Wait for Review page', params: { duration: 3000 } },
+            { action: 'click', description: 'Click Agree and continue', params: { selector: 'text=Agree and continue' } },
+            { action: 'wait', description: 'Wait for Add funds popup', params: { duration: 3000 } },
+            { action: 'click', description: 'Click Continue (Add funds)', params: { selector: 'text=Continue' } },
+            { action: 'wait', description: 'Wait for redirect', params: { duration: 3000 } },
+            { action: 'click', description: 'Click Continue to admin console', params: { selector: 'text=Continue to admin console' } },
+            { action: 'wait', description: 'Wait for success', params: { duration: 3000 } },
+            { action: 'screenshot', description: 'Screenshot success page', params: {} },
+          ],
+        });
+        logger.info('Default flow seeded successfully!');
+      }
+    } catch (seedErr) {
+      logger.warn('Flow seed failed', { error: seedErr.message });
+    }
+
     // Start background worker (async — won't crash if Redis is down)
     try {
       await startWorker();
