@@ -154,12 +154,18 @@
             </button>
           </div>
           <div id="execution-live-container" style="display:none">
+            <div style="margin-bottom:12px">
+              <button class="btn btn-secondary btn-sm" id="exec-back-btn" onclick="Execution.backToSelect()" style="display:none">
+                ← Back to Flow Selection
+              </button>
+            </div>
+            <div id="exec-error-panel" style="display:none"></div>
             <div class="execution-live">
               <!-- Progress Panel -->
               <div class="execution-progress-panel">
                 <div class="progress-bar-container">
                   <div class="progress-text">
-                    <span id="exec-status">⏳ Queued</span>
+                    <span id="exec-status" class="exec-status-badge queued">⏳ Queued</span>
                     <span id="exec-progress-text">0 / 0 steps</span>
                   </div>
                   <div class="progress-bar">

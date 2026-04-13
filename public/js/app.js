@@ -431,6 +431,8 @@ const Credentials = {
 const Execution = {
   currentExecutionId: null,
   totalSteps: 0,
+  flowSteps: [],
+  startTime: null,
 
   async run() {
     const select = document.getElementById('execute-flow-select');
@@ -441,6 +443,19 @@ const Execution = {
       return;
     }
 
+    // Get flow details for step preview
+    const flow = App.flows.find(f => f.id == flowId);
+    if (flow) {
+      this.flowSteps = flow.steps || [];
+      this.totalSteps = this.flowSteps.length;
+    }
+
+    // Show loading state on button
+    const btn = document.getElementById('execute-btn');
+    const originalText = btn.innerHTML;
+    btn.innerHTML = '<div class="spinner" style="width:14px;height:14px;border-width:2px;display:inline-block;vertical-align:middle;margin-right:8px"></div> Starting...';
+    btn.disabled = true;
+
     try {
       const res = await fetch(`/api/execute/${flowId}`, { method: 'POST' });
       const data = await res.json();
@@ -448,13 +463,25 @@ const Execution = {
       if (data.success) {
         this.currentExecutionId = data.execution.id;
         this.totalSteps = data.execution.total_steps;
+        this.startTime = Date.now();
         this._showLiveView();
         App.toast('Flow queued for execution! ⚡', 'success');
       } else {
+        // Show error with reason on UI
+        this._showError(data.error || 'Unknown error', 'Execution could not be started');
         App.toast(`Error: ${data.error}`, 'error');
       }
     } catch (err) {
+      // Network/server error — show with full details
+      this._showError(
+        err.message || 'Connection failed',
+        'Could not connect to the execution server. Check if Redis is running.'
+      );
       App.toast(`Execution failed: ${err.message}`, 'error');
+    } finally {
+      // Restore button
+      btn.innerHTML = originalText;
+      btn.disabled = false;
     }
   },
 
@@ -462,8 +489,10 @@ const Execution = {
     if (data.executionId !== this.currentExecutionId) return;
 
     if (data.event === 'status') {
-      document.getElementById('exec-status').textContent = 
-        `${data.status === 'running' ? '🔄' : data.status === 'completed' ? '✅' : '❌'} ${data.message || data.status}`;
+      const statusIcon = data.status === 'running' ? '🔄' : data.status === 'completed' ? '✅' : '❌';
+      const statusEl = document.getElementById('exec-status');
+      statusEl.innerHTML = `${statusIcon} ${data.message || data.status}`;
+      statusEl.className = `exec-status-badge ${data.status}`;
     }
 
     if (data.event === 'step') {
@@ -475,8 +504,33 @@ const Execution = {
     if (data.executionId !== this.currentExecutionId) return;
     
     const status = data.result?.status || 'unknown';
+    const elapsed = Date.now() - (this.startTime || Date.now());
+    const elapsedText = `${(elapsed / 1000).toFixed(1)}s`;
+
+    // Update status bar
+    const statusEl = document.getElementById('exec-status');
+    if (status === 'completed') {
+      statusEl.innerHTML = `✅ Completed in ${elapsedText}`;
+      statusEl.className = 'exec-status-badge completed';
+      document.getElementById('exec-progress-bar').style.width = '100%';
+      document.getElementById('exec-progress-bar').classList.add('completed');
+    } else {
+      statusEl.innerHTML = `❌ Failed — ${data.result?.error || 'Unknown error'}`;
+      statusEl.className = 'exec-status-badge failed';
+      document.getElementById('exec-progress-bar').classList.add('failed');
+    }
+
+    // Show error details if failed
+    if (status === 'failed' && data.result) {
+      this._showStepError(data.result);
+    }
+
+    // Show back button
+    const backBtn = document.getElementById('exec-back-btn');
+    if (backBtn) backBtn.style.display = 'inline-flex';
+
     App.toast(
-      status === 'completed' ? 'Flow completed successfully! ✅' : `Flow ${status}`,
+      status === 'completed' ? 'Flow completed successfully! ✅' : `Flow failed: ${data.result?.error || 'Error'}`,
       status === 'completed' ? 'success' : 'error'
     );
     App.loadExecutions();
@@ -484,17 +538,51 @@ const Execution = {
 
   _showLiveView() {
     document.getElementById('execution-select').style.display = 'none';
-    document.getElementById('execution-live-container').style.display = 'block';
-    document.getElementById('exec-steps-list').innerHTML = '';
+    const container = document.getElementById('execution-live-container');
+    container.style.display = 'block';
+    
+    // Reset progress
     document.getElementById('exec-progress-bar').style.width = '0%';
+    document.getElementById('exec-progress-bar').className = 'progress-bar-fill';
     document.getElementById('exec-progress-text').textContent = `0 / ${this.totalSteps} steps`;
-    document.getElementById('exec-status').textContent = '⏳ Queued - Waiting for worker...';
+    document.getElementById('exec-status').innerHTML = '⏳ Queued — Waiting for worker...';
+    document.getElementById('exec-status').className = 'exec-status-badge queued';
+    
+    // Hide back button
+    const backBtn = document.getElementById('exec-back-btn');
+    if (backBtn) backBtn.style.display = 'none';
+
+    // Clear error panel
+    const errorPanel = document.getElementById('exec-error-panel');
+    if (errorPanel) errorPanel.style.display = 'none';
+
+    // Build step list with all steps as pending
+    const list = document.getElementById('exec-steps-list');
+    list.innerHTML = '';
+
+    this.flowSteps.forEach((step, index) => {
+      const stepEl = document.createElement('div');
+      stepEl.id = `exec-step-${index + 1}`;
+      stepEl.className = 'exec-step pending';
+      stepEl.style.animationDelay = `${index * 0.05}s`;
+      stepEl.innerHTML = `
+        <div class="exec-step-num">${index + 1}</div>
+        <div class="exec-step-icon">⏳</div>
+        <div class="exec-step-content">
+          <div class="exec-step-action">${App._escapeHtml(step.action || 'Step')}</div>
+          <div class="exec-step-desc">${App._escapeHtml(step.description || '')}</div>
+        </div>
+        <div class="exec-step-time">—</div>
+      `;
+      list.appendChild(stepEl);
+    });
   },
 
   _updateStepUI(data) {
     const list = document.getElementById('exec-steps-list');
     const progress = (data.step / data.total) * 100;
 
+    // Animate progress bar
     document.getElementById('exec-progress-bar').style.width = `${progress}%`;
     document.getElementById('exec-progress-text').textContent = `${data.step} / ${data.total} steps`;
 
@@ -507,7 +595,7 @@ const Execution = {
       pending: '⏳',
     };
 
-    // Check if step element already exists
+    // Find existing step element or create new one
     let stepEl = document.getElementById(`exec-step-${data.step}`);
     if (!stepEl) {
       stepEl = document.createElement('div');
@@ -515,12 +603,17 @@ const Execution = {
       list.appendChild(stepEl);
     }
 
-    stepEl.className = `exec-step ${data.status}`;
+    // Apply status class with animation
+    stepEl.className = `exec-step ${data.status} step-animate`;
     stepEl.innerHTML = `
+      <div class="exec-step-num">${data.step}</div>
       <div class="exec-step-icon">${statusIcons[data.status] || '⚡'}</div>
       <div class="exec-step-content">
-        <div class="exec-step-action">Step ${data.step}: ${data.action || ''}</div>
+        <div class="exec-step-action">${App._escapeHtml(data.action || `Step ${data.step}`)}</div>
         <div class="exec-step-desc">${App._escapeHtml(data.description || data.message || '')}</div>
+        ${data.status === 'failed' && data.error ? `<div class="exec-step-error">❌ ${App._escapeHtml(data.error)}</div>` : ''}
+        ${data.status === 'healing' ? '<div class="exec-step-healing">🔧 AI is attempting to self-heal this step...</div>' : ''}
+        ${data.status === 'healed' ? '<div class="exec-step-healed">🩹 Step recovered by AI self-healer</div>' : ''}
       </div>
       <div class="exec-step-time">${data.duration || ''}</div>
     `;
@@ -534,37 +627,121 @@ const Execution = {
         `Step ${data.step}: ${data.description || data.action || ''}`;
     }
 
-    list.scrollTop = list.scrollHeight;
+    // Scroll to current step
+    stepEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  },
+
+  _showError(errorMessage, errorContext) {
+    // Show error inline in the execution area
+    document.getElementById('execution-select').style.display = 'none';
+    const container = document.getElementById('execution-live-container');
+    container.style.display = 'block';
+
+    const list = document.getElementById('exec-steps-list');
+    list.innerHTML = `
+      <div class="exec-error-card">
+        <div class="exec-error-header">
+          <span class="exec-error-icon">⚠️</span>
+          <span class="exec-error-title">Execution Failed</span>
+        </div>
+        <div class="exec-error-reason">${App._escapeHtml(errorContext)}</div>
+        <div class="exec-error-detail">
+          <div class="exec-error-label">Error Details:</div>
+          <code class="exec-error-code">${App._escapeHtml(errorMessage)}</code>
+        </div>
+        <div class="exec-error-tips">
+          <strong>Possible fixes:</strong>
+          <ul>
+            <li>Check if <strong>Redis</strong> service is running in EasyPanel</li>
+            <li>Verify <strong>REDIS_HOST</strong> environment variable is correct</li>
+            <li>Check EasyPanel logs for more details</li>
+            <li>Ensure the flow has valid steps</li>
+          </ul>
+        </div>
+        <button class="btn btn-primary" onclick="Execution.backToSelect()" style="margin-top:16px">
+          ← Back to Flow Selection
+        </button>
+      </div>
+    `;
+
+    document.getElementById('exec-status').innerHTML = '❌ Error';
+    document.getElementById('exec-status').className = 'exec-status-badge failed';
+    document.getElementById('exec-progress-bar').style.width = '0%';
+    document.getElementById('exec-progress-text').textContent = 'Failed';
+  },
+
+  _showStepError(result) {
+    const errorPanel = document.getElementById('exec-error-panel');
+    if (!errorPanel) return;
+    
+    errorPanel.style.display = 'block';
+    errorPanel.innerHTML = `
+      <div class="exec-error-card compact">
+        <div class="exec-error-header">
+          <span class="exec-error-icon">❌</span>
+          <span class="exec-error-title">Flow Failed at Step ${result.failedStep || '?'}</span>
+        </div>
+        <div class="exec-error-reason">${App._escapeHtml(result.error || 'Unknown error')}</div>
+        ${result.details ? `<code class="exec-error-code">${App._escapeHtml(result.details)}</code>` : ''}
+      </div>
+    `;
+  },
+
+  backToSelect() {
+    document.getElementById('execution-select').style.display = 'block';
+    document.getElementById('execution-live-container').style.display = 'none';
+    App.loadFlowsForSelect();
   },
 
   showDetails(execution) {
-    this.navigateTo('execution');
     this.currentExecutionId = execution.id;
     this.totalSteps = execution.total_steps;
-    this._showLiveView();
+    this.flowSteps = execution.steps || [];
 
-    const statusText = `${execution.status === 'completed' ? '✅' : execution.status === 'failed' ? '❌' : '⏳'} ${execution.status}`;
-    document.getElementById('exec-status').textContent = statusText;
+    App.navigateTo('execution');
+    
+    setTimeout(() => {
+      this._showLiveView();
 
-    const progress = (execution.current_step / execution.total_steps) * 100;
-    document.getElementById('exec-progress-bar').style.width = `${progress}%`;
-    document.getElementById('exec-progress-text').textContent = 
-      `${execution.current_step} / ${execution.total_steps} steps`;
+      const statusText = `${execution.status === 'completed' ? '✅' : execution.status === 'failed' ? '❌' : '⏳'} ${execution.status}`;
+      document.getElementById('exec-status').innerHTML = statusText;
+      document.getElementById('exec-status').className = `exec-status-badge ${execution.status}`;
 
-    // Render step history
-    if (execution.steps) {
-      execution.steps.forEach(step => {
-        this._updateStepUI({
-          step: step.step_index + 1,
-          total: execution.total_steps,
-          action: step.action,
-          description: step.description,
-          status: step.status,
-          duration: step.duration_ms ? `${(step.duration_ms/1000).toFixed(1)}s` : '',
-          screenshot: step.screenshot_path,
+      const progress = (execution.current_step / execution.total_steps) * 100;
+      document.getElementById('exec-progress-bar').style.width = `${progress}%`;
+      document.getElementById('exec-progress-text').textContent = 
+        `${execution.current_step} / ${execution.total_steps} steps`;
+
+      // Show back button
+      const backBtn = document.getElementById('exec-back-btn');
+      if (backBtn) backBtn.style.display = 'inline-flex';
+
+      // Render step history with staggered animation
+      if (execution.steps) {
+        execution.steps.forEach((step, i) => {
+          setTimeout(() => {
+            this._updateStepUI({
+              step: step.step_index + 1,
+              total: execution.total_steps,
+              action: step.action,
+              description: step.description,
+              status: step.status,
+              error: step.error_message,
+              duration: step.duration_ms ? `${(step.duration_ms/1000).toFixed(1)}s` : '',
+              screenshot: step.screenshot_path,
+            });
+          }, i * 100); // Stagger each step by 100ms
         });
-      });
-    }
+      }
+
+      // Show error info if failed
+      if (execution.status === 'failed' && execution.error_message) {
+        this._showStepError({
+          error: execution.error_message,
+          failedStep: execution.current_step,
+        });
+      }
+    }, 300);
   },
 };
 
@@ -582,3 +759,4 @@ document.addEventListener('DOMContentLoaded', () => {
 
 // ─── Initialize App ────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => App.init());
+

@@ -1411,3 +1411,243 @@ select.input {
     grid-template-columns: 1fr;
   }
 }
+
+/* ─── Execution Step Animations ─────────────────────── */
+.exec-step {
+  animation: stepSlideIn 0.3s ease both;
+}
+
+@keyframes stepSlideIn {
+  from { opacity: 0; transform: translateX(-20px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+.exec-step.step-animate {
+  animation: stepPulse 0.4s ease;
+}
+
+@keyframes stepPulse {
+  0% { transform: scale(1); }
+  30% { transform: scale(1.01); box-shadow: var(--shadow-md); }
+  100% { transform: scale(1); }
+}
+
+.exec-step-num {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  font-weight: 700;
+  flex-shrink: 0;
+  background: var(--bg-primary);
+  color: var(--text-muted);
+  border: 2px solid var(--border-subtle);
+  transition: all var(--transition-fast);
+}
+
+.exec-step.running .exec-step-num {
+  background: var(--info-bg);
+  color: var(--info);
+  border-color: var(--info);
+  animation: numPulse 1.5s ease infinite;
+}
+
+.exec-step.completed .exec-step-num {
+  background: var(--success);
+  color: white;
+  border-color: var(--success);
+}
+
+.exec-step.failed .exec-step-num {
+  background: var(--error);
+  color: white;
+  border-color: var(--error);
+}
+
+@keyframes numPulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(14, 165, 233, 0.4); }
+  50% { box-shadow: 0 0 0 6px rgba(14, 165, 233, 0); }
+}
+
+/* Step Error Display */
+.exec-step-error {
+  margin-top: 6px;
+  padding: 6px 10px;
+  background: var(--error-bg);
+  border: 1px solid rgba(239, 68, 68, 0.15);
+  border-radius: 6px;
+  font-size: 11px;
+  color: var(--error);
+  animation: fadeIn 0.3s ease;
+}
+
+.exec-step-healing {
+  margin-top: 6px;
+  padding: 6px 10px;
+  background: var(--warning-bg);
+  border: 1px solid rgba(245, 158, 11, 0.15);
+  border-radius: 6px;
+  font-size: 11px;
+  color: var(--warning);
+  animation: healPulse 1.5s ease infinite;
+}
+
+@keyframes healPulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
+
+.exec-step-healed {
+  margin-top: 6px;
+  padding: 6px 10px;
+  background: var(--success-bg);
+  border: 1px solid rgba(16, 185, 129, 0.15);
+  border-radius: 6px;
+  font-size: 11px;
+  color: var(--success);
+}
+
+/* ─── Execution Status Badges ───────────────────────── */
+.exec-status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 600;
+  transition: all var(--transition-normal);
+}
+
+.exec-status-badge.queued {
+  background: var(--warning-bg);
+  color: var(--warning);
+}
+
+.exec-status-badge.running {
+  background: var(--info-bg);
+  color: var(--info);
+}
+
+.exec-status-badge.completed {
+  background: var(--success-bg);
+  color: var(--success);
+}
+
+.exec-status-badge.failed {
+  background: var(--error-bg);
+  color: var(--error);
+}
+
+/* ─── Progress Bar States ───────────────────────────── */
+.progress-bar-fill.completed {
+  background: linear-gradient(135deg, #10b981 0%, #34d399 100%);
+}
+
+.progress-bar-fill.completed::after {
+  display: none;
+}
+
+.progress-bar-fill.failed {
+  background: linear-gradient(135deg, #ef4444 0%, #f87171 100%);
+}
+
+.progress-bar-fill.failed::after {
+  display: none;
+}
+
+/* ─── Error Cards ───────────────────────────────────── */
+.exec-error-card {
+  background: var(--bg-secondary);
+  border: 1px solid rgba(239, 68, 68, 0.2);
+  border-radius: var(--radius-lg);
+  padding: 24px;
+  margin-bottom: 16px;
+  animation: errorSlideIn 0.4s ease;
+  box-shadow: 0 4px 20px rgba(239, 68, 68, 0.08);
+}
+
+.exec-error-card.compact {
+  padding: 16px;
+}
+
+@keyframes errorSlideIn {
+  from { opacity: 0; transform: translateY(-10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.exec-error-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.exec-error-icon {
+  font-size: 24px;
+}
+
+.exec-error-title {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--error);
+}
+
+.exec-error-reason {
+  font-size: 13px;
+  color: var(--text-secondary);
+  margin-bottom: 14px;
+  line-height: 1.6;
+}
+
+.exec-error-detail {
+  margin-bottom: 14px;
+}
+
+.exec-error-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 6px;
+}
+
+.exec-error-code {
+  display: block;
+  padding: 12px 16px;
+  background: #fef2f2;
+  border: 1px solid rgba(239, 68, 68, 0.15);
+  border-radius: var(--radius-sm);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px;
+  color: #dc2626;
+  word-break: break-all;
+  white-space: pre-wrap;
+}
+
+.exec-error-tips {
+  font-size: 12px;
+  color: var(--text-secondary);
+  line-height: 1.8;
+}
+
+.exec-error-tips strong {
+  color: var(--text-primary);
+}
+
+.exec-error-tips ul {
+  margin-top: 6px;
+  padding-left: 20px;
+}
+
+.exec-error-tips li {
+  margin-bottom: 2px;
+}
+
+.exec-error-tips li strong {
+  color: var(--accent-primary);
+}
