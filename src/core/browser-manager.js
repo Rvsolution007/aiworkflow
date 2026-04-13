@@ -168,7 +168,7 @@ class BrowserManager {
       '--no-zygote',
       '--single-process',
       '--crash-dumps-dir=/tmp/.chromium/crashes',
-      '--user-data-dir=/tmp/.chromium/user-data',
+      `--user-data-dir=${this.profileDir}`,
       // Window size
       `--window-size=${this.profile.viewport.width},${this.profile.viewport.height}`,
       `--lang=${this.profile.locale}`,
