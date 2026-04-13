@@ -7,30 +7,30 @@
 
 /* ─── CSS Variables ─────────────────────────────────── */
 :root {
-  /* Backgrounds */
-  --bg-primary: #f0f6ff;
-  --bg-secondary: #ffffff;
-  --bg-card: rgba(255, 255, 255, 0.85);
+  /* Backgrounds — White with Light Green Shade */
+  --bg-primary: #f0faf4;
+  --bg-secondary: #f9fefb;
+  --bg-card: rgba(245, 253, 248, 0.9);
   --bg-card-hover: rgba(255, 255, 255, 1);
-  --bg-glass: rgba(240, 248, 255, 0.6);
-  --bg-input: rgba(240, 246, 255, 0.8);
-  --bg-sidebar: rgba(255, 255, 255, 0.97);
+  --bg-glass: rgba(240, 250, 244, 0.6);
+  --bg-input: rgba(245, 253, 248, 0.8);
+  --bg-sidebar: rgba(252, 255, 253, 0.97);
 
-  /* Borders */
-  --border-subtle: rgba(56, 152, 236, 0.1);
-  --border-medium: rgba(56, 152, 236, 0.2);
+  /* Borders — Soft Green Tint */
+  --border-subtle: rgba(16, 185, 129, 0.1);
+  --border-medium: rgba(16, 185, 129, 0.2);
   --border-focus: rgba(14, 165, 233, 0.5);
 
-  /* Text */
-  --text-primary: #0f172a;
-  --text-secondary: #475569;
-  --text-muted: #94a3b8;
-  --text-accent: #0284c7;
+  /* Text — Dark Blue */
+  --text-primary: #0a1e3d;
+  --text-secondary: #1e3a5f;
+  --text-muted: #6b839e;
+  --text-accent: #0c4a8a;
 
   /* Accents — Sky Blue */
   --accent-primary: #0ea5e9;
   --accent-primary-hover: #0284c7;
-  --accent-secondary: #6366f1;
+  --accent-secondary: #4f46e5;
   --accent-gradient: linear-gradient(135deg, #0ea5e9 0%, #38bdf8 50%, #7dd3fc 100%);
   --accent-glow: 0 4px 20px rgba(14, 165, 233, 0.25);
 
@@ -53,10 +53,10 @@
   --radius-lg: 18px;
   --radius-xl: 22px;
 
-  /* Shadows */
-  --shadow-sm: 0 1px 3px rgba(14, 165, 233, 0.06), 0 1px 2px rgba(0, 0, 0, 0.04);
-  --shadow-md: 0 4px 12px rgba(14, 165, 233, 0.08), 0 2px 4px rgba(0, 0, 0, 0.04);
-  --shadow-lg: 0 10px 30px rgba(14, 165, 233, 0.12), 0 4px 8px rgba(0, 0, 0, 0.04);
+  /* Shadows — Subtle Green Tinted */
+  --shadow-sm: 0 1px 3px rgba(16, 185, 129, 0.06), 0 1px 2px rgba(0, 0, 0, 0.03);
+  --shadow-md: 0 4px 12px rgba(16, 185, 129, 0.08), 0 2px 4px rgba(0, 0, 0, 0.03);
+  --shadow-lg: 0 10px 30px rgba(16, 185, 129, 0.1), 0 4px 8px rgba(0, 0, 0, 0.04);
   --shadow-glow: 0 0 30px rgba(14, 165, 233, 0.15);
 
   /* Transitions */
@@ -540,7 +540,7 @@ select.input {
   display: flex;
   flex-direction: column;
   gap: 16px;
-  background: linear-gradient(180deg, #f8fbff 0%, #f0f6ff 100%);
+  background: linear-gradient(180deg, #f6fef8 0%, #eef9f1 100%);
 }
 
 .chat-message {
@@ -671,7 +671,7 @@ select.input {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  background: linear-gradient(135deg, rgba(14, 165, 233, 0.05) 0%, rgba(56, 189, 248, 0.03) 100%);
+  background: linear-gradient(135deg, rgba(16, 185, 129, 0.05) 0%, rgba(14, 165, 233, 0.03) 100%);
 }
 
 .flow-preview-title {
@@ -683,7 +683,7 @@ select.input {
   flex: 1;
   overflow-y: auto;
   padding: 16px;
-  background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+  background: linear-gradient(180deg, #ffffff 0%, #f2faf5 100%);
 }
 
 .flow-step {
