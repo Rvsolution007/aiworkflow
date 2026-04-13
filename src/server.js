@@ -86,10 +86,9 @@ async function start() {
     // Initialize database (happens on require)
     require('./models/database');
 
-    // Start background worker
+    // Start background worker (async — won't crash if Redis is down)
     try {
-      startWorker();
-      logger.info('Background worker started');
+      await startWorker();
     } catch (err) {
       logger.warn('Could not start background worker (Redis may not be running)', {
         error: err.message,
