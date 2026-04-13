@@ -86,9 +86,42 @@ async function start() {
     // Initialize database (happens on require)
     require('./models/database');
 
-    // Auto-seed default flow if it doesn't exist yet
+    // Auto-seed or update default flow
     try {
       const Flow = require('./models/Flow');
+      const FLOW_VERSION = 2; // Increment this when steps change
+      const flowSteps = [
+        { action: 'navigate', description: 'Open Google Admin Console', params: { url: 'https://admin.google.com/' } },
+        { action: 'conditional_login', description: 'Login if required', params: { credential_key: 'google_admin' } },
+        // Direct URL navigation — bypasses sidebar popups!
+        { action: 'navigate', description: 'Go to Billing > Subscriptions', params: { url: 'https://admin.google.com/ac/billing/subscriptions' } },
+        { action: 'wait', description: 'Wait for subscriptions page', params: { duration: 5000 } },
+        { action: 'click', description: 'Click AI Ultra Access', params: { selector: 'text=AI Ultra Access' } },
+        { action: 'wait', description: 'Wait for details', params: { duration: 3000 } },
+        { action: 'click', description: 'Click Cancel subscription', params: { selector: 'text=Cancel subscription' } },
+        { action: 'wait', description: 'Wait for dialog', params: { duration: 3000 } },
+        { action: 'click', description: 'Select Too expensive', params: { selector: 'text=Too expensive' } },
+        { action: 'wait', description: 'Wait', params: { duration: 2000 } },
+        { action: 'click', description: 'Check confirmation checkbox', params: { selector: 'text=I have read the information above and want to proceed with canceling my subscription' } },
+        { action: 'wait', description: 'Wait', params: { duration: 1000 } },
+        { action: 'type', description: 'Enter email for confirmation', params: { selector: 'input[type="email"], input[name="email"]', text: 'antigravity97732@gmail.com', clear: true } },
+        { action: 'click', description: 'Click Cancel my subscription', params: { selector: 'text=Cancel my subscription' } },
+        { action: 'wait', description: 'Wait 1 min for cancellation', params: { duration: 60000 } },
+        { action: 'navigate', description: 'Open AI Ultra plans page', params: { url: 'https://workspace.google.com/intl/en_in/products/ai-ultra/#plans' } },
+        { action: 'wait', description: 'Wait for plans page', params: { duration: 5000 } },
+        { action: 'click', description: 'Click Buy now', params: { selector: 'text=Buy now' } },
+        { action: 'wait', description: 'Wait for checkout', params: { duration: 5000 } },
+        { action: 'click', description: 'Click Continue', params: { selector: 'text=Continue' } },
+        { action: 'wait', description: 'Wait for Review page', params: { duration: 5000 } },
+        { action: 'click', description: 'Click Agree and continue', params: { selector: 'text=Agree and continue' } },
+        { action: 'wait', description: 'Wait for Add funds popup', params: { duration: 5000 } },
+        { action: 'click', description: 'Click Continue (Add funds)', params: { selector: 'text=Continue' } },
+        { action: 'wait', description: 'Wait for redirect', params: { duration: 5000 } },
+        { action: 'click', description: 'Click Continue to admin console', params: { selector: 'text=Continue to admin console' } },
+        { action: 'wait', description: 'Wait for success', params: { duration: 3000 } },
+        { action: 'screenshot', description: 'Screenshot success page', params: {} },
+      ];
+
       const existing = Flow.search('Cancel & Renew AI Ultra');
       if (existing.length === 0) {
         logger.info('Seeding default Google Workspace flow...');
@@ -96,41 +129,21 @@ async function start() {
           name: 'Cancel & Renew AI Ultra Subscription',
           description: 'Cancel Google AI Ultra subscription and buy a new one from Workspace store',
           category: 'google-admin',
-          steps: [
-            { action: 'navigate', description: 'Open Google Admin Console', params: { url: 'https://admin.google.com/' } },
-            { action: 'conditional_login', description: 'Login if required', params: { credential_key: 'google_admin' } },
-            { action: 'click', description: 'Click Billing', params: { selector: 'text=Billing' } },
-            { action: 'wait', description: 'Wait for page load', params: { duration: 3000 } },
-            { action: 'click', description: 'Click Subscriptions', params: { selector: 'text=Subscriptions' } },
-            { action: 'wait', description: 'Wait for subscriptions', params: { duration: 3000 } },
-            { action: 'click', description: 'Click AI Ultra Access', params: { selector: 'text=AI Ultra Access' } },
-            { action: 'wait', description: 'Wait for details', params: { duration: 2000 } },
-            { action: 'click', description: 'Click Cancel subscription', params: { selector: 'text=Cancel subscription' } },
-            { action: 'wait', description: 'Wait for dialog', params: { duration: 2000 } },
-            { action: 'click', description: 'Select Too expensive', params: { selector: 'text=Too expensive' } },
-            { action: 'click', description: 'Check confirmation checkbox', params: { selector: 'text=I have read the information above and want to proceed with canceling my subscription' } },
-            { action: 'wait', description: 'Wait', params: { duration: 1000 } },
-            { action: 'type', description: 'Enter email for confirmation', params: { selector: 'input[type="email"], input[name="email"]', text: 'antigravity97732@gmail.com', clear: true } },
-            { action: 'click', description: 'Click Cancel my subscription', params: { selector: 'text=Cancel my subscription' } },
-            { action: 'wait', description: 'Wait 1 min for cancellation', params: { duration: 60000 } },
-            { action: 'navigate', description: 'Open AI Ultra plans page', params: { url: 'https://workspace.google.com/intl/en_in/products/ai-ultra/#plans' } },
-            { action: 'wait', description: 'Wait for plans page', params: { duration: 3000 } },
-            { action: 'click', description: 'Click Buy now', params: { selector: 'text=Buy now' } },
-            { action: 'wait', description: 'Wait for checkout', params: { duration: 3000 } },
-            { action: 'click', description: 'Click Continue', params: { selector: 'text=Continue' } },
-            { action: 'wait', description: 'Wait for Review page', params: { duration: 3000 } },
-            { action: 'click', description: 'Click Agree and continue', params: { selector: 'text=Agree and continue' } },
-            { action: 'wait', description: 'Wait for Add funds popup', params: { duration: 3000 } },
-            { action: 'click', description: 'Click Continue (Add funds)', params: { selector: 'text=Continue' } },
-            { action: 'wait', description: 'Wait for redirect', params: { duration: 3000 } },
-            { action: 'click', description: 'Click Continue to admin console', params: { selector: 'text=Continue to admin console' } },
-            { action: 'wait', description: 'Wait for success', params: { duration: 3000 } },
-            { action: 'screenshot', description: 'Screenshot success page', params: {} },
-          ],
+          steps: flowSteps,
         });
         logger.info('Default flow seeded successfully!');
       } else {
-        logger.info(`Default flow already exists (${existing.length} found), skipping seed.`);
+        // Auto-update flow steps if version changed
+        const flow = existing[0];
+        if (!flow.description?.includes(`v${FLOW_VERSION}`)) {
+          Flow.update(flow.id, {
+            steps: flowSteps,
+            description: `Cancel Google AI Ultra subscription and buy a new one from Workspace store (v${FLOW_VERSION})`,
+          });
+          logger.info(`Flow updated to v${FLOW_VERSION} (direct URL navigation)`);
+        } else {
+          logger.info(`Default flow already up-to-date (v${FLOW_VERSION}), skipping.`);
+        }
       }
     } catch (seedErr) {
       logger.warn('Flow seed failed', { error: seedErr.message });
