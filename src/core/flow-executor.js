@@ -284,7 +284,80 @@ class FlowExecutor {
     });
     // Warm up behavior after navigation
     await sleep(randomInt(1000, 2500));
+
+    // Check if Google redirected to "Choose an account" page
+    const currentUrl = page.url();
+    if (currentUrl.includes('accounts.google.com')) {
+      logger.info('Google redirected to account page, handling...');
+      await this._handleAccountChooser(page);
+    }
+
     if (this.human) await this.human.warmUp();
+  }
+
+  /**
+   * Handle Google "Choose an account" page
+   * Clicks on the first signed-in account to proceed
+   */
+  async _handleAccountChooser(page) {
+    const url = page.url();
+    
+    // Account chooser page
+    if (url.includes('AccountChooser') || url.includes('selectaccount') || url.includes('/signin/')) {
+      logger.info('On "Choose an account" page, selecting first account...');
+      
+      try {
+        // Wait for account list to load
+        await sleep(2000);
+
+        // Try to click the first account (the signed-in one)
+        const clicked = await page.evaluate(() => {
+          // Google account chooser: look for account list items
+          const accountItems = document.querySelectorAll(
+            '[data-identifier], [data-email], li[role="link"], div[role="link"], .JDAKTe'
+          );
+          
+          if (accountItems.length > 0) {
+            accountItems[0].click();
+            return true;
+          }
+
+          // Fallback: click any element that looks like an email
+          const allElements = document.querySelectorAll('div, span, li');
+          for (const el of allElements) {
+            const text = el.textContent.trim();
+            if (text.includes('@') && text.includes('.com') && el.offsetParent !== null) {
+              el.click();
+              return true;
+            }
+          }
+          return false;
+        });
+
+        if (clicked) {
+          logger.info('Clicked on account in chooser');
+          await page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 30000 }).catch(() => {});
+          await sleep(randomInt(2000, 4000));
+          
+          // After selecting account, might need to handle post-login screens
+          await this._handlePostLoginScreens(page);
+        } else {
+          logger.warn('Could not find account to click in chooser');
+        }
+      } catch (err) {
+        logger.warn('Account chooser handling failed', { error: err.message });
+      }
+    }
+
+    // If on login page (session expired), try re-login
+    if (url.includes('accounts.google.com/signin') || url.includes('ServiceLogin')) {
+      logger.info('Session expired, attempting re-login...');
+      // Find credential from current flow
+      const cred = Credential.findByName('google_admin', true);
+      if (cred) {
+        await this._googleLogin(page, cred);
+      }
+    }
   }
 
   async _stepClick(page, params) {
