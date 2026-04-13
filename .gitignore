@@ -1,0 +1,22 @@
+# AI Flow Builder
+
+# Dependencies
+node_modules/
+
+# Environment
+.env
+
+# Data
+data/
+credentials/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log

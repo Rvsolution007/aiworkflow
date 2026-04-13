@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="AI Flow Builder — Intelligent browser automation with anti-detection">
+  <title>AI Flow Builder</title>
+  <link rel="stylesheet" href="/css/style.css">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⚡</text></svg>">
+</head>
+<body>
+  <div class="app">
+
+    <!-- ─── Sidebar ──────────────────────────────── -->
+    <aside class="sidebar">
+      <div class="sidebar-header">
+        <div class="sidebar-logo">⚡</div>
+        <div>
+          <div class="sidebar-title">AI Flow Builder</div>
+          <div class="sidebar-subtitle">Intelligent Automation</div>
+        </div>
+      </div>
+
+      <nav class="sidebar-nav">
+        <div class="nav-group-label">Build</div>
+        <div class="nav-item active" data-section="ai-builder" id="nav-ai-builder">
+          <span class="nav-icon">🧠</span>
+          <span>AI Builder</span>
+        </div>
+        <div class="nav-item" data-section="flows" id="nav-flows">
+          <span class="nav-icon">📋</span>
+          <span>My Flows</span>
+          <span class="nav-badge" id="flows-count">0</span>
+        </div>
+
+        <div class="nav-group-label">Execute</div>
+        <div class="nav-item" data-section="execution" id="nav-execution">
+          <span class="nav-icon">▶️</span>
+          <span>Run Flow</span>
+        </div>
+        <div class="nav-item" data-section="history" id="nav-history">
+          <span class="nav-icon">📊</span>
+          <span>History</span>
+        </div>
+
+        <div class="nav-group-label">Settings</div>
+        <div class="nav-item" data-section="credentials" id="nav-credentials">
+          <span class="nav-icon">🔐</span>
+          <span>Credentials</span>
+        </div>
+        <div class="nav-item" data-section="settings" id="nav-settings">
+          <span class="nav-icon">⚙️</span>
+          <span>Settings</span>
+        </div>
+      </nav>
+
+      <div class="sidebar-footer">
+        <div class="sidebar-status">
+          <div class="status-dot" id="ws-status"></div>
+          <span id="ws-status-text">Connecting...</span>
+        </div>
+      </div>
+    </aside>
+
+    <!-- ─── Main Content ─────────────────────────── -->
+    <div class="main-content">
+      <header class="content-header">
+        <h1 class="header-title" id="page-title">🧠 AI Builder</h1>
+        <div class="header-actions">
+          <button class="btn btn-secondary btn-sm" onclick="App.refreshData()">🔄 Refresh</button>
+        </div>
+      </header>
+
+      <div class="content-body">
+
+        <!-- ═══ AI Builder Section ═══ -->
+        <div class="section active" id="section-ai-builder">
+          <div class="ai-builder-layout">
+            <!-- Chat Panel -->
+            <div class="chat-panel">
+              <div class="chat-header">
+                <div class="chat-header-icon">🧠</div>
+                <div>
+                  <div class="chat-header-title">FlowAI Assistant</div>
+                  <div class="chat-header-subtitle">Describe your automation task in natural language</div>
+                </div>
+              </div>
+              <div class="chat-messages" id="chat-messages">
+                <div class="chat-message ai">
+                  <div class="chat-avatar">🧠</div>
+                  <div class="chat-bubble">
+                    Hi! I'm FlowAI. Tell me what you want to automate and I'll create a browser automation flow for you.<br><br>
+                    <strong>Examples:</strong><br>
+                    • "Cancel Google Workspace AI Ultra subscription"<br>
+                    • "Login to AWS and check billing"<br>
+                    • "Open Facebook and post a status"
+                  </div>
+                </div>
+              </div>
+              <div class="chat-input-area">
+                <input type="text" class="chat-input" id="chat-input" 
+                       placeholder="e.g., Cancel Google subscription and buy new one..." 
+                       autocomplete="off">
+                <button class="chat-send-btn" id="chat-send-btn" onclick="AIChat.send()">➤</button>
+              </div>
+            </div>
+
+            <!-- Flow Preview -->
+            <div class="flow-preview-panel">
+              <div class="flow-preview-header">
+                <div class="flow-preview-title">Generated Flow</div>
+                <div id="flow-preview-actions" style="display:none">
+                  <button class="btn btn-sm btn-success" onclick="FlowBuilder.saveFlow()">💾 Save</button>
+                  <button class="btn btn-sm btn-primary" onclick="FlowBuilder.saveAndExecute()">▶️ Save & Run</button>
+                </div>
+              </div>
+              <div class="flow-steps-list" id="flow-steps-list">
+                <div class="empty-state">
+                  <div class="empty-state-icon">🤖</div>
+                  <div class="empty-state-text">No flow generated yet</div>
+                  <div class="empty-state-subtext">Chat with AI to generate automation steps</div>
+                </div>
+              </div>
+              <div class="flow-preview-footer" id="flow-preview-footer" style="display:none">
+                <input type="text" class="input" id="flow-name-input" placeholder="Flow name..." style="flex:1">
+                <button class="btn btn-sm btn-secondary" onclick="FlowBuilder.clearFlow()">🗑️ Clear</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ═══ My Flows Section ═══ -->
+        <div class="section" id="section-flows">
+          <div class="card-grid" id="flows-grid">
+            <div class="empty-state">
+              <div class="empty-state-icon">📋</div>
+              <div class="empty-state-text">No flows yet</div>
+              <div class="empty-state-subtext">Use AI Builder to create your first automation flow</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ═══ Run Flow / Execution Section ═══ -->
+        <div class="section" id="section-execution">
+          <div id="execution-select" style="margin-bottom:20px">
+            <div class="input-group">
+              <label class="input-label">Select Flow to Execute</label>
+              <select class="input" id="execute-flow-select">
+                <option value="">— Select a flow —</option>
+              </select>
+            </div>
+            <button class="btn btn-primary btn-lg" id="execute-btn" onclick="Execution.run()">
+              ▶️ Execute Flow
+            </button>
+          </div>
+          <div id="execution-live-container" style="display:none">
+            <div class="execution-live">
+              <!-- Progress Panel -->
+              <div class="execution-progress-panel">
+                <div class="progress-bar-container">
+                  <div class="progress-text">
+                    <span id="exec-status">⏳ Queued</span>
+                    <span id="exec-progress-text">0 / 0 steps</span>
+                  </div>
+                  <div class="progress-bar">
+                    <div class="progress-bar-fill" id="exec-progress-bar" style="width: 0%"></div>
+                  </div>
+                </div>
+                <div class="execution-steps-list" id="exec-steps-list"></div>
+              </div>
+              <!-- Screenshot Panel -->
+              <div class="execution-screenshot-panel">
+                <div class="chat-header">
+                  <div class="chat-header-icon">📸</div>
+                  <div>
+                    <div class="chat-header-title">Live Screenshot</div>
+                    <div class="chat-header-subtitle" id="screenshot-label">Waiting for execution...</div>
+                  </div>
+                </div>
+                <div class="screenshot-container" id="screenshot-container">
+                  <div class="empty-state">
+                    <div class="empty-state-icon">📸</div>
+                    <div class="empty-state-text">Screenshots will appear here</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ═══ History Section ═══ -->
+        <div class="section" id="section-history">
+          <div id="history-list">
+            <div class="empty-state">
+              <div class="empty-state-icon">📊</div>
+              <div class="empty-state-text">No execution history</div>
+              <div class="empty-state-subtext">Run a flow to see execution history</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ═══ Credentials Section ═══ -->
+        <div class="section" id="section-credentials">
+          <div style="margin-bottom:20px">
+            <button class="btn btn-primary" onclick="Credentials.showAddModal()">
+              ➕ Add Credential
+            </button>
+          </div>
+          <div class="card-grid" id="credentials-grid">
+            <div class="empty-state">
+              <div class="empty-state-icon">🔐</div>
+              <div class="empty-state-text">No credentials stored</div>
+              <div class="empty-state-subtext">Add credentials for automated login</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ═══ Settings Section ═══ -->
+        <div class="section" id="section-settings">
+          <div class="settings-grid">
+            <div class="settings-card">
+              <div class="settings-card-title">🤖 AI Engine</div>
+              <div class="settings-card-desc">Gemini Vertex AI configuration</div>
+              <div class="input-group">
+                <label class="input-label">Gemini Model</label>
+                <select class="input" id="setting-model">
+                  <option value="gemini-2.0-flash">Gemini 2.0 Flash (Fast)</option>
+                  <option value="gemini-1.5-pro">Gemini 1.5 Pro (Better)</option>
+                  <option value="gemini-2.0-pro">Gemini 2.0 Pro (Best)</option>
+                </select>
+              </div>
+              <div class="input-group">
+                <label class="input-label">Project ID</label>
+                <input type="text" class="input" id="setting-project-id" placeholder="your-gcp-project-id">
+              </div>
+            </div>
+
+            <div class="settings-card">
+              <div class="settings-card-title">🌐 Browser</div>
+              <div class="settings-card-desc">Headless browser configuration</div>
+              <div class="input-group">
+                <label class="input-label">Chrome Path (auto-detect if empty)</label>
+                <input type="text" class="input" id="setting-chrome-path" placeholder="Auto-detect">
+              </div>
+              <div class="input-group">
+                <label class="input-label">Default Viewport</label>
+                <div style="display:flex;gap:10px">
+                  <input type="number" class="input" id="setting-viewport-w" placeholder="1366" value="1366" style="flex:1">
+                  <span style="padding-top:10px;color:var(--text-muted)">×</span>
+                  <input type="number" class="input" id="setting-viewport-h" placeholder="768" value="768" style="flex:1">
+                </div>
+              </div>
+            </div>
+
+            <div class="settings-card">
+              <div class="settings-card-title">🌍 Proxy (Optional)</div>
+              <div class="settings-card-desc">Residential proxy for anti-detection</div>
+              <div class="input-group">
+                <label class="input-label">Proxy Host</label>
+                <input type="text" class="input" id="setting-proxy-host" placeholder="proxy.example.com">
+              </div>
+              <div class="input-group">
+                <label class="input-label">Proxy Port</label>
+                <input type="text" class="input" id="setting-proxy-port" placeholder="8080">
+              </div>
+              <div class="input-group">
+                <label class="input-label">Username</label>
+                <input type="text" class="input" id="setting-proxy-user" placeholder="Optional">
+              </div>
+              <div class="input-group">
+                <label class="input-label">Password</label>
+                <input type="password" class="input" id="setting-proxy-pass" placeholder="Optional">
+              </div>
+            </div>
+
+            <div class="settings-card">
+              <div class="settings-card-title">📊 System Info</div>
+              <div class="settings-card-desc">Server health and statistics</div>
+              <div id="system-info" style="font-size:12px;color:var(--text-secondary)">
+                Loading...
+              </div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- ─── Modal ──────────────────────────────────── -->
+  <div class="modal-overlay" id="modal-overlay">
+    <div class="modal" id="modal-content">
+      <!-- Dynamic modal content -->
+    </div>
+  </div>
+
+  <!-- ─── Toast Container ────────────────────────── -->
+  <div class="toast-container" id="toast-container"></div>
+
+  <!-- ─── Scripts ────────────────────────────────── -->
+  <script src="/js/websocket.js"></script>
+  <script src="/js/ai-chat.js"></script>
+  <script src="/js/flow-builder.js"></script>
+  <script src="/js/app.js"></script>
+</body>
+</html>

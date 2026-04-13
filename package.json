@@ -1,0 +1,30 @@
+{
+  "name": "ai-flow-builder",
+  "version": "1.0.0",
+  "description": "AI-powered browser automation flow builder with anti-detection",
+  "main": "src/server.js",
+  "scripts": {
+    "dev": "node --watch src/server.js",
+    "start": "node src/server.js",
+    "worker": "node src/queue/worker.js"
+  },
+  "keywords": ["automation", "ai", "flow-builder", "browser"],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@google-cloud/vertexai": "^1.9.2",
+    "better-sqlite3": "^11.7.0",
+    "bullmq": "^5.34.0",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "ghost-cursor": "^1.3.0",
+    "ioredis": "^5.4.2",
+    "multer": "^1.4.5-lts.1",
+    "otplib": "^12.0.1",
+    "rebrowser-puppeteer-core": "^23.11.1",
+    "uuid": "^11.1.0",
+    "winston": "^3.17.0",
+    "ws": "^8.18.0"
+  }
+}

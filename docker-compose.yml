@@ -1,0 +1,53 @@
+version: '3.8'
+
+services:
+  # ─── AI Flow Builder App ─────────────────────────
+  app:
+    build: .
+    container_name: ai-flow-builder
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - MASTER_PASSWORD=${MASTER_PASSWORD:-change-me-in-production}
+      - GOOGLE_APPLICATION_CREDENTIALS=/app/credentials/service-account.json
+      - GOOGLE_PROJECT_ID=${GOOGLE_PROJECT_ID}
+      - GOOGLE_LOCATION=${GOOGLE_LOCATION:-us-central1}
+      - GEMINI_MODEL=${GEMINI_MODEL:-gemini-2.0-flash}
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - CHROME_EXECUTABLE_PATH=/usr/bin/chromium
+      - HEADLESS=true
+    volumes:
+      - app-data:/app/data
+      - ./credentials:/app/credentials:ro
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - app-network
+
+  # ─── Redis (Job Queue) ──────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: ai-flow-redis
+    restart: unless-stopped
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - app-network
+
+volumes:
+  app-data:
+  redis-data:
+
+networks:
+  app-network:
+    driver: bridge
