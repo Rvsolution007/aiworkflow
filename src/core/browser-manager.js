@@ -42,6 +42,17 @@ class BrowserManager {
     this.profileDir = path.join(config.paths.profiles, sanitizeFilename(profileName));
     if (!fs.existsSync(this.profileDir)) {
       fs.mkdirSync(this.profileDir, { recursive: true });
+    } else {
+      // Clear any dangling lock files from previous crashes
+      try {
+        const lockFile = path.join(this.profileDir, 'SingletonLock');
+        const cookieFile = path.join(this.profileDir, 'SingletonCookie');
+        if (fs.existsSync(lockFile)) fs.unlinkSync(lockFile);
+        if (fs.existsSync(cookieFile)) fs.unlinkSync(cookieFile);
+        logger.debug('Cleared Chromium profile lock files');
+      } catch (e) {
+        logger.warn('Failed to clear lock files', { error: e.message });
+      }
     }
 
     // Build launch arguments
