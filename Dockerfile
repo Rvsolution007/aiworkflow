@@ -34,6 +34,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     xdg-utils \
     dumb-init \
     dbus \
+    procps \
     && rm -rf /var/lib/apt/lists/*
 
 # Set Chrome path for Puppeteer
@@ -47,7 +48,7 @@ ENV CHROME_DEVEL_SANDBOX=
 ENV DBUS_SESSION_BUS_ADDRESS=/dev/null
 
 # Create app directories with proper permissions
-RUN mkdir -p /app/data/profiles /app/data/screenshots /app/data/logs /app/credentials /tmp/.chromium /run/dbus \
+RUN mkdir -p /app/data/profiles /app/data/screenshots /app/data/logs /app/credentials /tmp/.chromium/crashes /run/dbus \
     && chmod -R 777 /tmp/.chromium /run/dbus
 
 WORKDIR /app

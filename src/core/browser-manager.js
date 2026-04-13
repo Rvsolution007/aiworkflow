@@ -7,6 +7,7 @@
 const puppeteer = require('rebrowser-puppeteer-core');
 const path = require('path');
 const fs = require('fs');
+const { execSync } = require('child_process');
 const config = require('../config');
 const logger = require('../utils/logger');
 const { getRandomProfile, generateFingerprintScript } = require('./fingerprint');
@@ -21,11 +22,7 @@ class BrowserManager {
   }
 
   /**
-   * Launch browser with full anti-detection configuration
-   * @param {object} options - Launch options
-   * @param {string} options.profileName - Name for persistent profile (reuse sessions)
-   * @param {boolean} options.headless - Override headless setting
-   * @returns {object} { browser, page, profile }
+   * Launch browser with retry logic for Docker stability
    */
   async launch(options = {}) {
     const { profileName = 'default', headless } = options;
@@ -35,7 +32,6 @@ class BrowserManager {
     logger.info('Selected fingerprint profile', {
       ua: this.profile.userAgent.substring(0, 50) + '...',
       viewport: `${this.profile.viewport.width}x${this.profile.viewport.height}`,
-      gpu: this.profile.webglRenderer.substring(0, 40) + '...',
     });
 
     // Setup persistent profile directory
@@ -44,100 +40,108 @@ class BrowserManager {
       fs.mkdirSync(this.profileDir, { recursive: true });
     }
 
-    // CRITICAL: Kill any zombie Chromium processes from previous runs
-    this._killZombieChromium();
+    // Clean up before launch
+    this._cleanupBeforeLaunch();
 
-    // Clear ALL lock files (SingletonLock is a symlink — existsSync returns false for dangling symlinks)
-    const lockFiles = ['SingletonLock', 'SingletonCookie', 'SingletonSocket'];
-    for (const file of lockFiles) {
+    const executablePath = this._findChromePath();
+    const isHeadless = headless !== undefined ? headless : config.browser.headless;
+    const args = this._buildLaunchArgs();
+
+    // Retry launch up to 3 times
+    let lastError;
+    for (let attempt = 1; attempt <= 3; attempt++) {
       try {
-        fs.unlinkSync(path.join(this.profileDir, file));
-        logger.info(`Removed lock file: ${file}`);
-      } catch (e) {
-        // ENOENT = file doesn't exist — that's fine
+        logger.info(`Launching browser (attempt ${attempt}/3)...`);
+
+        this.browser = await puppeteer.launch({
+          executablePath,
+          headless: isHeadless ? 'new' : false,
+          args,
+          defaultViewport: {
+            width: this.profile.viewport.width,
+            height: this.profile.viewport.height,
+          },
+          ignoreDefaultArgs: ['--enable-automation'],
+          protocolTimeout: 120000,
+          timeout: 60000,
+          // Handle browser disconnection
+          handleSIGINT: false,
+          handleSIGTERM: false,
+          handleSIGHUP: false,
+        });
+
+        // Get the first page or create one
+        const pages = await this.browser.pages();
+        this.page = pages[0] || await this.browser.newPage();
+
+        // Apply anti-detection measures
+        await this._applyStealthMeasures();
+        await this.page.setUserAgent(this.profile.userAgent);
+
+        // Configure proxy authentication if needed
+        if (config.proxy.enabled && config.proxy.username) {
+          await this.page.authenticate({
+            username: config.proxy.username,
+            password: config.proxy.password,
+          });
+        }
+
+        // Monitor browser for unexpected disconnection
+        this.browser.on('disconnected', () => {
+          logger.warn('Browser disconnected unexpectedly');
+          this.browser = null;
+          this.page = null;
+        });
+
+        logger.info('Browser launched successfully');
+        return { browser: this.browser, page: this.page, profile: this.profile };
+
+      } catch (err) {
+        lastError = err;
+        logger.error(`Browser launch attempt ${attempt} failed: ${err.message}`);
+
+        // Cleanup failed browser
+        try { if (this.browser) await this.browser.close(); } catch (e) {}
+        this.browser = null;
+        this.page = null;
+
+        if (attempt < 3) {
+          // Kill any stuck processes and wait before retry
+          this._cleanupBeforeLaunch();
+          await new Promise(r => setTimeout(r, 3000));
+        }
       }
     }
 
-    // Build launch arguments
-    const args = this._buildLaunchArgs();
-
-    // Determine Chrome executable path
-    const executablePath = this._findChromePath();
-
-    const isHeadless = headless !== undefined ? headless : config.browser.headless;
-
-    logger.info('Launching browser...', {
-      headless: isHeadless,
-      profile: profileName,
-      chrome: executablePath,
-    });
-
-    // Launch browser
-    this.browser = await puppeteer.launch({
-      executablePath,
-      headless: isHeadless ? 'new' : false,
-      args,
-      defaultViewport: {
-        width: this.profile.viewport.width,
-        height: this.profile.viewport.height,
-      },
-      ignoreDefaultArgs: ['--enable-automation'],
-      // Extra anti-detect settings for rebrowser
-      protocolTimeout: 120000,
-      timeout: 30000,
-    });
-
-    // Get the first page or create one
-    const pages = await this.browser.pages();
-    this.page = pages[0] || await this.browser.newPage();
-
-    // Apply anti-detection measures
-    await this._applyStealthMeasures();
-
-    // Set user agent
-    await this.page.setUserAgent(this.profile.userAgent);
-
-    // Configure proxy authentication if needed
-    if (config.proxy.enabled && config.proxy.username) {
-      await this.page.authenticate({
-        username: config.proxy.username,
-        password: config.proxy.password,
-      });
-    }
-
-    logger.info('Browser launched successfully');
-
-    return {
-      browser: this.browser,
-      page: this.page,
-      profile: this.profile,
-    };
+    throw lastError;
   }
 
   /**
-   * Take a screenshot and save it
-   * @param {string} filename - Screenshot filename (without extension)
-   * @returns {string} Full path to screenshot
+   * Take a screenshot safely (won't crash if browser died)
    */
   async screenshot(filename = 'screenshot') {
-    if (!this.page) throw new Error('Browser not launched');
+    if (!this.page) {
+      logger.warn('Cannot take screenshot — page is null');
+      return null;
+    }
 
-    const screenshotPath = path.join(
-      config.paths.screenshots,
-      `${sanitizeFilename(filename)}_${Date.now()}.png`
-    );
+    try {
+      const screenshotPath = path.join(
+        config.paths.screenshots,
+        `${sanitizeFilename(filename)}_${Date.now()}.png`
+      );
 
-    await this.page.screenshot({
-      path: screenshotPath,
-      fullPage: false,
-    });
-
-    logger.debug(`Screenshot saved: ${screenshotPath}`);
-    return screenshotPath;
+      await this.page.screenshot({ path: screenshotPath, fullPage: false });
+      logger.debug(`Screenshot saved: ${screenshotPath}`);
+      return screenshotPath;
+    } catch (err) {
+      logger.warn(`Screenshot failed (non-fatal): ${err.message}`);
+      return null;
+    }
   }
 
   /**
-   * Close browser gracefully
+   * Close browser gracefully + force kill any orphans
    */
   async close() {
     if (this.browser) {
@@ -145,68 +149,84 @@ class BrowserManager {
         await this.browser.close();
         logger.info('Browser closed');
       } catch (err) {
-        logger.warn('Error closing browser', { error: err.message });
+        logger.warn('Error closing browser, force killing', { error: err.message });
+        // Force kill if graceful close fails
+        try {
+          const proc = this.browser.process();
+          if (proc) proc.kill('SIGKILL');
+        } catch (e) {}
       }
       this.browser = null;
       this.page = null;
     }
   }
+
+  /**
+   * Check if browser is still alive
+   */
+  isAlive() {
+    return this.browser !== null && this.browser.isConnected();
+  }
+
   // ─── Private Methods ─────────────────────────────────
 
   /**
-   * Forcefully kill any stray Chromium processes to release locks.
-   * This is critical when running in Docker with persistent volumes,
-   * as a crashed process will leave the profile locked in the volume.
+   * Kill zombie processes + remove lock files before launch
    */
-  _killZombieChromium() {
-    try {
-      const { execSync } = require('child_process');
-      if (process.platform === 'linux') {
-        logger.debug('Checking for stray Chromium processes...');
-        // Kill any chromium processes (|| true to avoid throwing if none found)
-        execSync('pkill -9 -f chromium || true');
-        execSync('pkill -9 -f chrome || true');
-      } else if (process.platform === 'win32') {
-        try {
-          execSync('taskkill /F /IM chrome.exe /T', { stdio: 'ignore' });
-        } catch (e) {}
-      }
-    } catch (e) {
-      logger.debug('Process kill check completed (non-fatal errors ignored)');
+  _cleanupBeforeLaunch() {
+    // Kill zombie Chromium processes (Linux/Docker only)
+    if (process.platform === 'linux') {
+      try {
+        // Only kill processes older than 5 seconds (avoid killing freshly spawned ones)
+        execSync('pkill -9 -f "chromium.*--type=" 2>/dev/null || true', { stdio: 'ignore' });
+        execSync('pkill -9 -f "chromium.*--user-data-dir" 2>/dev/null || true', { stdio: 'ignore' });
+        // Wait for processes to fully die
+        execSync('sleep 1', { stdio: 'ignore' });
+      } catch (e) {}
     }
+
+    // Remove lock files (SingletonLock is a symlink — existsSync returns false for dangling ones)
+    const lockFiles = ['SingletonLock', 'SingletonCookie', 'SingletonSocket'];
+    for (const file of lockFiles) {
+      try { fs.unlinkSync(path.join(this.profileDir, file)); } catch (e) {}
+    }
+    logger.debug('Pre-launch cleanup complete');
   }
 
   /**
-   * Build Chrome launch arguments for anti-detection
+   * Build Chrome launch arguments for Docker environment
    */
   _buildLaunchArgs() {
     const args = [
+      // Security
       '--no-sandbox',
       '--disable-setuid-sandbox',
+
+      // Anti-detection
       '--disable-blink-features=AutomationControlled',
-      '--disable-features=IsolateOrigins,site-per-process',
       '--disable-infobars',
+      '--no-first-run',
+      '--no-default-browser-check',
+      '--password-store=basic',
+      '--use-mock-keychain',
+
+      // Performance & stability in Docker
+      '--disable-dev-shm-usage',
+      '--disable-gpu',
+      '--disable-software-rasterizer',
       '--disable-background-networking',
       '--disable-default-apps',
       '--disable-extensions',
       '--disable-sync',
       '--disable-translate',
-      '--disable-dev-shm-usage',
-      '--no-first-run',
-      '--no-default-browser-check',
-      '--no-pings',
-      '--password-store=basic',
-      '--use-mock-keychain',
-      // Fix for Docker environment
-      '--disable-gpu',
-      '--disable-software-rasterizer',
+      '--disable-features=IsolateOrigins,site-per-process,TranslateUI',
+
+      // Crash prevention
       '--disable-crashpad',
-      '--no-zygote',
-      '--single-process',
-      '--disable-features=dbus',
       '--crash-dumps-dir=/tmp/.chromium/crashes',
+
+      // Profile
       `--user-data-dir=${this.profileDir}`,
-      // Window size
       `--window-size=${this.profile.viewport.width},${this.profile.viewport.height}`,
       `--lang=${this.profile.locale}`,
     ];
@@ -236,9 +256,6 @@ class BrowserManager {
       accuracy: 100,
     });
 
-    // Block known fingerprinting resources (optional — can cause issues)
-    // await this._blockFingerprinters();
-
     // Set extra HTTP headers
     await this.page.setExtraHTTPHeaders({
       'Accept-Language': this.profile.languages.join(','),
@@ -254,12 +271,10 @@ class BrowserManager {
    * Find Chrome/Chromium executable path
    */
   _findChromePath() {
-    // If explicitly configured, use that
     if (config.browser.executablePath) {
       return config.browser.executablePath;
     }
 
-    // Try common paths
     const possiblePaths = process.platform === 'win32'
       ? [
           'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
@@ -277,14 +292,11 @@ class BrowserManager {
 
     for (const chromePath of possiblePaths) {
       if (chromePath && fs.existsSync(chromePath)) {
-        logger.info(`Found Chrome at: ${chromePath}`);
         return chromePath;
       }
     }
 
-    throw new Error(
-      'Chrome/Chromium not found. Set CHROME_EXECUTABLE_PATH in .env or install Chrome.'
-    );
+    throw new Error('Chrome/Chromium not found. Set CHROME_EXECUTABLE_PATH in .env');
   }
 }
 

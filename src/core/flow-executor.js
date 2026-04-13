@@ -85,6 +85,11 @@ class FlowExecutor {
         });
 
         try {
+          // Check browser is still alive
+          if (!this.browserManager.isAlive()) {
+            throw new Error('Browser crashed — session lost. Please retry the flow.');
+          }
+
           // Execute the step
           await this._executeStep(step, page, flow);
 
