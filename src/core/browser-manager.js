@@ -44,15 +44,19 @@ class BrowserManager {
       fs.mkdirSync(this.profileDir, { recursive: true });
     } else {
       // Clear any dangling lock files from previous crashes
-      try {
-        const lockFile = path.join(this.profileDir, 'SingletonLock');
-        const cookieFile = path.join(this.profileDir, 'SingletonCookie');
-        if (fs.existsSync(lockFile)) fs.unlinkSync(lockFile);
-        if (fs.existsSync(cookieFile)) fs.unlinkSync(cookieFile);
-        logger.debug('Cleared Chromium profile lock files');
-      } catch (e) {
-        logger.warn('Failed to clear lock files', { error: e.message });
+      // Note: fs.existsSync returns false for dangling symlinks, so we must just try to unlink
+      const filesToRemove = ['SingletonLock', 'SingletonCookie', 'SingletonSocket'];
+      for (const file of filesToRemove) {
+        try {
+          fs.unlinkSync(path.join(this.profileDir, file));
+        } catch (e) {
+          // Ignore ENOENT (file doesn't exist)
+          if (e.code !== 'ENOENT') {
+            logger.debug(`Could not remove ${file}: ${e.message}`);
+          }
+        }
       }
+      logger.debug('Cleared Chromium profile lock files if they existed');
     }
 
     // Build launch arguments
