@@ -251,17 +251,22 @@ const App = {
     };
 
     container.innerHTML = this.executions.map(exec => `
-      <div class="history-card" onclick="App.viewExecution(${exec.id})">
+      <div class="history-card ${exec.status}" onclick="App.viewExecution(${exec.id})">
         <div class="history-status-icon ${exec.status}">
           ${statusIcons[exec.status] || '❓'}
         </div>
         <div class="history-info">
           <div class="history-name">${this._escapeHtml(exec.flow_name)}</div>
           <div class="history-meta">
-            <span>${exec.status}</span>
+            <span class="exec-status-badge ${exec.status}">${exec.status}</span>
             <span>${exec.current_step}/${exec.total_steps} steps</span>
             <span>${new Date(exec.created_at).toLocaleString()}</span>
           </div>
+          ${exec.error_message ? `
+            <div class="history-error">
+              ⚠️ ${this._escapeHtml(exec.error_message.substring(0, 150))}${exec.error_message.length > 150 ? '...' : ''}
+            </div>
+          ` : ''}
         </div>
       </div>
     `).join('');

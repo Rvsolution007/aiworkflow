@@ -1737,3 +1737,37 @@ select.input {
   background-clip: text;
   margin-top: 6px;
 }
+
+/* ─── History Error Display ─────────────────────────── */
+.history-card.failed {
+  border-left: 3px solid var(--error);
+}
+
+.history-card.queued {
+  border-left: 3px solid var(--warning);
+}
+
+.history-card.completed {
+  border-left: 3px solid var(--success);
+}
+
+.history-card.running {
+  border-left: 3px solid var(--info);
+}
+
+.history-error {
+  margin-top: 6px;
+  padding: 6px 10px;
+  background: var(--error-bg);
+  border: 1px solid rgba(239, 68, 68, 0.12);
+  border-radius: 6px;
+  font-size: 11px;
+  color: var(--error);
+  line-height: 1.5;
+  word-break: break-word;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}

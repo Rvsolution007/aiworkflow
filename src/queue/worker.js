@@ -48,38 +48,95 @@ async function startWorker() {
   // Redis is available — start the actual worker
   const { Worker } = require('bullmq');
   const FlowExecutor = require('../core/flow-executor');
+  const Execution = require('../models/Execution');
 
   const worker = new Worker(
     'flow-execution',
     async (job) => {
       const { flow, executionId } = job.data;
 
-      logger.info(`Worker processing job: ${job.id}`, {
+      logger.info(`[WORKER] ===== Processing job: ${job.id} =====`, {
         flowName: flow.name,
         executionId,
+        totalSteps: flow.steps?.length,
       });
 
-      // Create executor with progress reporting
-      const executor = new FlowExecutor({
-        onProgress: (data) => {
-          wsBroadcast(JSON.stringify({
-            type: 'execution_progress',
-            ...data,
-          }));
-        },
-      });
-
-      // Execute flow
-      const result = await executor.execute(flow, executionId);
-
-      // Broadcast final status
+      // Broadcast that we started
       wsBroadcast(JSON.stringify({
-        type: 'execution_complete',
+        type: 'execution_progress',
+        event: 'status',
         executionId,
-        result,
+        status: 'running',
+        message: 'Worker picked up job — Launching browser...',
       }));
 
-      return result;
+      try {
+        // Create executor with progress reporting
+        const executor = new FlowExecutor({
+          onProgress: (data) => {
+            logger.info(`[WORKER] Progress event: ${data.event}`, {
+              executionId,
+              step: data.step,
+              status: data.status,
+            });
+            wsBroadcast(JSON.stringify({
+              type: 'execution_progress',
+              ...data,
+            }));
+          },
+        });
+
+        // Execute flow
+        const result = await executor.execute(flow, executionId);
+
+        logger.info(`[WORKER] Flow execution finished`, {
+          executionId,
+          status: result.status,
+          error: result.error || null,
+        });
+
+        // Broadcast final status
+        wsBroadcast(JSON.stringify({
+          type: 'execution_complete',
+          executionId,
+          result,
+        }));
+
+        return result;
+      } catch (execError) {
+        logger.error(`[WORKER] Flow execution crashed`, {
+          executionId,
+          error: execError.message,
+          stack: execError.stack,
+        });
+
+        // Update execution status to failed
+        try {
+          Execution.updateStatus(executionId, 'failed', execError.message);
+        } catch (e) { /* ignore */ }
+
+        // Broadcast error to frontend
+        wsBroadcast(JSON.stringify({
+          type: 'execution_progress',
+          event: 'status',
+          executionId,
+          status: 'failed',
+          message: `❌ ${execError.message}`,
+        }));
+
+        wsBroadcast(JSON.stringify({
+          type: 'execution_complete',
+          executionId,
+          result: {
+            status: 'failed',
+            error: execError.message,
+            failedStep: 0,
+            details: execError.stack?.split('\n').slice(0, 3).join(' → '),
+          },
+        }));
+
+        throw execError; // Re-throw so BullMQ marks it as failed
+      }
     },
     {
       connection: {
@@ -97,23 +154,46 @@ async function startWorker() {
   );
 
   worker.on('completed', (job, result) => {
-    logger.info(`Job completed: ${job.id}`, { result });
+    logger.info(`[WORKER] Job completed: ${job.id}`, { 
+      status: result?.status,
+      duration: result?.duration,
+    });
   });
 
   worker.on('failed', (job, err) => {
-    logger.error(`Job failed: ${job?.id}`, { error: err.message });
+    logger.error(`[WORKER] Job failed: ${job?.id}`, { 
+      error: err.message,
+      stack: err.stack?.split('\n').slice(0, 5).join(' | '),
+    });
+
+    // Also broadcast failure to frontend with full error details
+    if (job?.data?.executionId) {
+      wsBroadcast(JSON.stringify({
+        type: 'execution_complete',
+        executionId: job.data.executionId,
+        result: {
+          status: 'failed',
+          error: err.message,
+          details: err.stack?.split('\n').slice(0, 3).join(' → '),
+        },
+      }));
+    }
   });
 
   worker.on('error', (err) => {
     // Only log once per minute to avoid log spam
     if (!worker._lastErrorLog || Date.now() - worker._lastErrorLog > 60000) {
-      logger.error('Worker error', { error: err.message });
+      logger.error('[WORKER] Worker error', { error: err.message });
       worker._lastErrorLog = Date.now();
     }
   });
 
+  worker.on('active', (job) => {
+    logger.info(`[WORKER] Job active: ${job.id}`);
+  });
+
   workerInstance = worker;
-  logger.info('Background worker started (concurrency=1)');
+  logger.info('[WORKER] Background worker started (concurrency=1)');
 
   return worker;
 }
