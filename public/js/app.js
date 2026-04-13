@@ -458,6 +458,13 @@ const Execution = {
 
     try {
       const res = await fetch(`/api/execute/${flowId}`, { method: 'POST' });
+      
+      // Check if response is JSON
+      const contentType = res.headers.get('content-type') || '';
+      if (!contentType.includes('application/json')) {
+        throw new Error(`Server returned ${res.status} ${res.statusText}. The API may not be available.`);
+      }
+
       const data = await res.json();
 
       if (data.success) {
@@ -468,7 +475,10 @@ const Execution = {
         App.toast('Flow queued for execution! ⚡', 'success');
       } else {
         // Show error with reason on UI
-        this._showError(data.error || 'Unknown error', 'Execution could not be started');
+        this._showError(
+          data.error || 'Unknown error', 
+          data.details || 'Execution could not be started'
+        );
         App.toast(`Error: ${data.error}`, 'error');
       }
     } catch (err) {
