@@ -62,7 +62,6 @@ class BrowserManager {
     this.browser = await puppeteer.launch({
       executablePath,
       headless: isHeadless ? 'new' : false,
-      userDataDir: this.profileDir,
       args,
       defaultViewport: {
         width: this.profile.viewport.width,
@@ -71,6 +70,7 @@ class BrowserManager {
       ignoreDefaultArgs: ['--enable-automation'],
       // Extra anti-detect settings for rebrowser
       protocolTimeout: 120000,
+      timeout: 30000,
     });
 
     // Get the first page or create one
@@ -161,6 +161,15 @@ class BrowserManager {
       '--no-pings',
       '--password-store=basic',
       '--use-mock-keychain',
+      // Fix for Docker crashpad error
+      '--disable-gpu',
+      '--disable-software-rasterizer',
+      '--disable-crashpad',
+      '--no-zygote',
+      '--single-process',
+      '--crash-dumps-dir=/tmp/.chromium/crashes',
+      '--user-data-dir=/tmp/.chromium/user-data',
+      // Window size
       `--window-size=${this.profile.viewport.width},${this.profile.viewport.height}`,
       `--lang=${this.profile.locale}`,
     ];

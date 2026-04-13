@@ -547,6 +547,9 @@ const Execution = {
         // Now show all the flow steps
         this._showLiveView();
         App.toast('Flow queued for execution! ⚡', 'success');
+
+        // Start auto-checking if stuck in queue
+        this._startQueueWatcher(data.execution.id);
       } else {
         // Show error with reason on UI
         this._showError(
@@ -569,8 +572,130 @@ const Execution = {
     return new Promise(resolve => setTimeout(resolve, ms));
   },
 
+  _queueTimer: null,
+  _queueCheckCount: 0,
+
+  _startQueueWatcher(executionId) {
+    this._queueCheckCount = 0;
+    if (this._queueTimer) clearInterval(this._queueTimer);
+    
+    this._queueTimer = setInterval(async () => {
+      this._queueCheckCount++;
+      const elapsed = this._queueCheckCount * 10;
+
+      // Update status with timer
+      const statusEl = document.getElementById('exec-status');
+      if (statusEl && statusEl.className.includes('queued')) {
+        statusEl.innerHTML = `⏳ Queued — Waiting for worker... (${elapsed}s)`;
+      }
+
+      // After 20s, check execution status from API
+      if (this._queueCheckCount >= 2) {
+        try {
+          const res = await fetch(`/api/executions/${executionId}`);
+          const data = await res.json();
+          
+          if (data.success && data.execution) {
+            const exec = data.execution;
+            
+            // If still queued after 30s, show debug info
+            if (exec.status === 'queued' && this._queueCheckCount >= 3) {
+              this._showQueueDebug(elapsed);
+            }
+            
+            // If status changed, stop watching
+            if (exec.status !== 'queued') {
+              clearInterval(this._queueTimer);
+              this._queueTimer = null;
+            }
+
+            // If failed, broadcast it
+            if (exec.status === 'failed') {
+              this.handleComplete({
+                executionId,
+                result: { status: 'failed', error: exec.error_message || 'Worker failed' },
+              });
+            }
+          }
+        } catch (e) {
+          // ignore fetch errors
+        }
+      }
+
+      // After 2 minutes, stop watching
+      if (this._queueCheckCount >= 12) {
+        clearInterval(this._queueTimer);
+        this._queueTimer = null;
+      }
+    }, 10000);
+  },
+
+  async _showQueueDebug(elapsed) {
+    // Fetch Redis health
+    let redisInfo = 'Checking...';
+    try {
+      const healthRes = await fetch('/api/health');
+      const health = await healthRes.json();
+      if (health.redis) {
+        const r = health.redis;
+        redisInfo = r.status === 'connected'
+          ? `🟢 Connected (${r.host}:${r.port})`
+          : `🔴 Disconnected — ${r.error || 'Unknown'}`;
+      }
+    } catch (e) {
+      redisInfo = '❌ Could not fetch health';
+    }
+
+    // Show debug card below steps
+    const list = document.getElementById('exec-steps-list');
+    let debugEl = document.getElementById('exec-queue-debug');
+    if (!debugEl) {
+      debugEl = document.createElement('div');
+      debugEl.id = 'exec-queue-debug';
+      list.parentNode.insertBefore(debugEl, list.nextSibling);
+    }
+    
+    debugEl.innerHTML = `
+      <div class="exec-error-card" style="border-color: var(--warning); box-shadow: 0 4px 20px rgba(245,158,11,0.1);">
+        <div class="exec-error-header">
+          <span class="exec-error-icon">⏳</span>
+          <span class="exec-error-title" style="color:var(--warning)">Stuck in Queue (${elapsed}s)</span>
+        </div>
+        <div class="exec-error-reason">The worker has not picked up this job. Possible reasons:</div>
+        <div class="exec-error-tips">
+          <strong>Debug Info:</strong>
+          <ul>
+            <li>Redis Status: <strong>${redisInfo}</strong></li>
+            <li>Execution ID: ${this.currentExecutionId}</li>
+            <li>Waiting: ${elapsed} seconds</li>
+          </ul>
+          <br>
+          <strong>Possible fixes:</strong>
+          <ul>
+            <li>Check <strong>REDIS_PASSWORD</strong> in EasyPanel environment</li>
+            <li>Restart the <strong>aiworkflow</strong> service in EasyPanel</li>
+            <li>Check EasyPanel logs for <code>[WORKER]</code> messages</li>
+            <li>Verify Redis service <strong>redis_aiworkflow</strong> is running</li>
+          </ul>
+        </div>
+        <button class="btn btn-secondary btn-sm" onclick="Execution.backToSelect()" style="margin-top:12px">
+          ← Cancel & Go Back
+        </button>
+      </div>
+    `;
+  },
+
   handleProgress(data) {
     if (data.executionId !== this.currentExecutionId) return;
+
+    // Stop queue watcher if we get progress
+    if (this._queueTimer) {
+      clearInterval(this._queueTimer);
+      this._queueTimer = null;
+    }
+    // Remove debug card if shown
+    const debugEl = document.getElementById('exec-queue-debug');
+    if (debugEl) debugEl.remove();
 
     if (data.event === 'status') {
       const statusIcon = data.status === 'running' ? '🔄' : data.status === 'completed' ? '✅' : '❌';

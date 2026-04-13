@@ -8,11 +8,12 @@ RUN npm install --omit=dev
 # ─── Production Stage ──────────────────────────────
 FROM node:20-slim
 
-# Install Chromium and dependencies for headless browser
+# Install Chromium and ALL required dependencies for headless browser
 RUN apt-get update && apt-get install -y --no-install-recommends \
     chromium \
     fonts-liberation \
     fonts-noto-color-emoji \
+    fonts-noto-cjk \
     libatk-bridge2.0-0 \
     libatk1.0-0 \
     libcups2 \
@@ -28,34 +29,40 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libxfixes3 \
     libxrandr2 \
     libxshmfence1 \
+    libxss1 \
+    libasound2 \
     xdg-utils \
+    dumb-init \
     && rm -rf /var/lib/apt/lists/*
 
 # Set Chrome path for Puppeteer
 ENV CHROME_EXECUTABLE_PATH=/usr/bin/chromium
 ENV NODE_ENV=production
 ENV HEADLESS=true
+# Fix crashpad handler issue
+ENV CHROME_CRASHPAD_PIPE_NAME=
+ENV CHROME_DEVEL_SANDBOX=
 
-# Create non-root user
-RUN groupadd -r appuser && useradd -r -g appuser -G audio,video appuser \
-    && mkdir -p /app/data/profiles /app/data/screenshots /app/data/logs /app/credentials \
-    && chown -R appuser:appuser /app
+# Create app directories with proper permissions
+RUN mkdir -p /app/data/profiles /app/data/screenshots /app/data/logs /app/credentials /tmp/.chromium \
+    && chmod -R 777 /tmp/.chromium
 
 WORKDIR /app
 
 # Copy dependencies from builder
-COPY --from=builder --chown=appuser:appuser /app/node_modules ./node_modules
+COPY --from=builder /app/node_modules ./node_modules
 
 # Copy application code
-COPY --chown=appuser:appuser . .
+COPY . .
 
-# Switch to non-root user
-USER appuser
+# Ensure data dirs are writable
+RUN chmod -R 777 /app/data
 
 EXPOSE 3000
 
 # Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
+HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
   CMD node -e "fetch('http://localhost:3000/api/health').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"
 
-CMD ["node", "src/server.js"]
+# Use dumb-init to handle signals properly
+CMD ["dumb-init", "node", "src/server.js"]
