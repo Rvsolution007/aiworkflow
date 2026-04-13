@@ -197,11 +197,12 @@ class BrowserManager {
       '--no-pings',
       '--password-store=basic',
       '--use-mock-keychain',
-      // Fix for Docker crashpad error
+      // Fix for Docker environment
       '--disable-gpu',
       '--disable-software-rasterizer',
       '--disable-crashpad',
       '--no-zygote',
+      '--single-process',
       '--disable-features=dbus',
       '--crash-dumps-dir=/tmp/.chromium/crashes',
       `--user-data-dir=${this.profileDir}`,
