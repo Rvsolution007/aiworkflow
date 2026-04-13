@@ -291,16 +291,36 @@ class FlowExecutor {
     const selector = params.selector || params.text;
     logger.debug(`Clicking: ${selector}`);
 
+    // First, try to dismiss any overlay popups that might be blocking
+    await this._dismissOverlayPopups(page);
+
     if (selector.startsWith('text=')) {
       // Text-based click
       const text = selector.replace('text=', '');
-      const clicked = await this.human.clickText(text);
+      let clicked = await this.human.clickText(text);
+      
       if (!clicked) {
         // Fallback: try Puppeteer's text selector
         try {
           await page.click(`::-p-text(${text})`, { timeout: 10000 });
+          clicked = true;
         } catch {
-          throw new Error(`Could not find element with text: "${text}"`);
+          // If click failed, maybe a popup is blocking — dismiss and retry
+          logger.info(`Click failed for "${text}", attempting popup dismiss + retry...`);
+          const dismissed = await this._dismissOverlayPopups(page, true);
+          if (dismissed) {
+            await sleep(randomInt(1000, 2000));
+            clicked = await this.human.clickText(text);
+            if (!clicked) {
+              try {
+                await page.click(`::-p-text(${text})`, { timeout: 5000 });
+                clicked = true;
+              } catch {}
+            }
+          }
+          if (!clicked) {
+            throw new Error(`Could not find element with text: "${text}"`);
+          }
         }
       }
     } else {
@@ -308,6 +328,80 @@ class FlowExecutor {
       await page.waitForSelector(selector, { timeout: 15000, visible: true });
       await this.human.click(selector);
     }
+  }
+
+  /**
+   * Dismiss any overlay popups, modals, or welcome screens
+   * that might be blocking clicks on the actual page content.
+   */
+  async _dismissOverlayPopups(page, force = false) {
+    try {
+      const dismissed = await page.evaluate((forceCheck) => {
+        // Try to find and close common popup patterns
+        const closeSelectors = [
+          // Close buttons (X icons)
+          'button[aria-label="Close"]',
+          'button[aria-label="Dismiss"]',
+          '.modal-close',
+          '.popup-close',
+          '[class*="close-button"]',
+          '[class*="dismiss"]',
+          'button.close',
+          'mat-dialog-container button[mat-icon-button]',
+          // Material Design close icons
+          'button mat-icon',
+        ];
+
+        for (const sel of closeSelectors) {
+          const el = document.querySelector(sel);
+          if (el && el.offsetParent !== null) {
+            el.click();
+            return 'close-button';
+          }
+        }
+
+        // Check for overlay/backdrop and try to click it to dismiss
+        const overlays = document.querySelectorAll(
+          '.cdk-overlay-backdrop, .modal-backdrop, [class*="overlay"], [class*="backdrop"]'
+        );
+        for (const overlay of overlays) {
+          if (overlay.offsetParent !== null || overlay.style.display !== 'none') {
+            overlay.click();
+            return 'overlay-click';
+          }
+        }
+
+        // Check for "Get set up" or similar welcome popups and try dismiss
+        const allButtons = document.querySelectorAll('button, a[role="button"]');
+        const dismissTexts = ['not now', 'skip', 'dismiss', 'close', 'cancel', 'no thanks', 'later', 'maybe later'];
+        for (const btn of allButtons) {
+          const btnText = btn.textContent.trim().toLowerCase();
+          if (dismissTexts.some(t => btnText.includes(t)) && btn.offsetParent !== null) {
+            btn.click();
+            return `dismiss-${btnText}`;
+          }
+        }
+
+        return null;
+      }, force);
+
+      if (dismissed) {
+        logger.info(`Dismissed overlay popup via: ${dismissed}`);
+        await sleep(1000);
+        return true;
+      }
+
+      // Also try Escape key to close modals
+      if (force) {
+        await page.keyboard.press('Escape');
+        await sleep(500);
+        // Check if something closed
+        return true;
+      }
+    } catch (e) {
+      logger.debug('Overlay dismiss check failed (non-critical)');
+    }
+    return false;
   }
 
   async _stepType(page, params) {
