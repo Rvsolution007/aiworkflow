@@ -136,11 +136,18 @@ const App = {
       const res = await fetch('/api/health');
       const data = await res.json();
       const el = document.getElementById('system-info');
+      const redisIcon = data.redis?.status === 'connected' ? '🟢' : '🔴';
+      const redisColor = data.redis?.status === 'connected' ? 'var(--success)' : 'var(--error)';
       el.innerHTML = `
         <p>🟢 Status: ${data.status}</p>
         <p>⏱️ Uptime: ${Math.floor(data.uptime / 60)} minutes</p>
         <p>💾 Memory: ${Math.round(data.memory.heapUsed / 1024 / 1024)}MB / ${Math.round(data.memory.heapTotal / 1024 / 1024)}MB</p>
         <p>🕐 Server Time: ${new Date(data.timestamp).toLocaleString()}</p>
+        <hr style="margin:10px 0;border-color:var(--border-subtle)">
+        <p style="font-weight:600">Redis Queue:</p>
+        <p>${redisIcon} Redis: <strong style="color:${redisColor}">${data.redis?.status || 'unknown'}</strong></p>
+        <p>📡 Host: <code style="background:var(--bg-primary);padding:2px 6px;border-radius:4px">${data.redis?.host || '?'}:${data.redis?.port || '?'}</code></p>
+        ${data.redis?.error ? `<p style="color:var(--error);font-size:11px">⚠️ ${data.redis.error}</p>` : ''}
       `;
     } catch (err) {
       document.getElementById('system-info').textContent = '❌ Unable to fetch system info';
@@ -450,12 +457,64 @@ const Execution = {
       this.totalSteps = this.flowSteps.length;
     }
 
-    // Show loading state on button
-    const btn = document.getElementById('execute-btn');
-    const originalText = btn.innerHTML;
-    btn.innerHTML = '<div class="spinner" style="width:14px;height:14px;border-width:2px;display:inline-block;vertical-align:middle;margin-right:8px"></div> Starting...';
-    btn.disabled = true;
+    // Hide selector, show live view immediately with init progress
+    document.getElementById('execution-select').style.display = 'none';
+    const container = document.getElementById('execution-live-container');
+    container.style.display = 'block';
 
+    // Show initialization progress in steps list
+    const list = document.getElementById('exec-steps-list');
+    document.getElementById('exec-progress-bar').style.width = '0%';
+    document.getElementById('exec-progress-bar').className = 'progress-bar-fill';
+    document.getElementById('exec-progress-text').textContent = 'Initializing...';
+
+    const initPhases = [
+      { label: 'Preparing flow environment...', pct: 10 },
+      { label: 'Loading flow steps...', pct: 25 },
+      { label: 'Connecting to execution engine...', pct: 45 },
+      { label: 'Queueing flow for execution...', pct: 65 },
+      { label: 'Launching browser worker...', pct: 85 },
+    ];
+
+    // Show init progress card
+    list.innerHTML = `
+      <div class="exec-init-card">
+        <div class="exec-init-header">
+          <div class="spinner" style="width:20px;height:20px"></div>
+          <span>Initializing Execution</span>
+        </div>
+        <div class="exec-init-phase" id="exec-init-phase">${initPhases[0].label}</div>
+        <div class="exec-init-bar">
+          <div class="exec-init-bar-fill" id="exec-init-bar-fill" style="width:0%"></div>
+        </div>
+        <div class="exec-init-pct" id="exec-init-pct">0%</div>
+      </div>
+    `;
+
+    const statusEl = document.getElementById('exec-status');
+    statusEl.innerHTML = '🚀 Initializing...';
+    statusEl.className = 'exec-status-badge running';
+
+    // Animate through phases
+    const phaseEl = document.getElementById('exec-init-phase');
+    const barEl = document.getElementById('exec-init-bar-fill');
+    const pctEl = document.getElementById('exec-init-pct');
+
+    for (let i = 0; i < initPhases.length; i++) {
+      await this._delay(300 + Math.random() * 200);
+      if (phaseEl) {
+        phaseEl.textContent = initPhases[i].label;
+        phaseEl.style.animation = 'none';
+        phaseEl.offsetHeight; // reflow
+        phaseEl.style.animation = 'fadeIn 0.3s ease';
+      }
+      if (barEl) barEl.style.width = `${initPhases[i].pct}%`;
+      if (pctEl) pctEl.textContent = `${initPhases[i].pct}%`;
+      document.getElementById('exec-progress-bar').style.width = `${Math.round(initPhases[i].pct * 0.1)}%`;
+      document.getElementById('exec-progress-text').textContent = `Initializing... ${initPhases[i].pct}%`;
+    }
+
+    // Now make the actual API call
     try {
       const res = await fetch(`/api/execute/${flowId}`, { method: 'POST' });
       
@@ -468,9 +527,19 @@ const Execution = {
       const data = await res.json();
 
       if (data.success) {
+        // Complete init progress
+        if (barEl) barEl.style.width = '100%';
+        if (pctEl) pctEl.textContent = '100%';
+        if (phaseEl) phaseEl.textContent = '✅ Flow queued successfully!';
+        document.getElementById('exec-progress-text').textContent = `Initializing... 100%`;
+
+        await this._delay(500);
+
         this.currentExecutionId = data.execution.id;
         this.totalSteps = data.execution.total_steps;
         this.startTime = Date.now();
+        
+        // Now show all the flow steps
         this._showLiveView();
         App.toast('Flow queued for execution! ⚡', 'success');
       } else {
@@ -488,11 +557,11 @@ const Execution = {
         'Could not connect to the execution server. Check if Redis is running.'
       );
       App.toast(`Execution failed: ${err.message}`, 'error');
-    } finally {
-      // Restore button
-      btn.innerHTML = originalText;
-      btn.disabled = false;
     }
+  },
+
+  _delay(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
   },
 
   handleProgress(data) {

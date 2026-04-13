@@ -86,12 +86,12 @@ async function start() {
     // Initialize database (happens on require)
     require('./models/database');
 
-    // Auto-seed default flow if none exist
+    // Auto-seed default flow if it doesn't exist yet
     try {
       const Flow = require('./models/Flow');
-      const allFlows = Flow.findAll();
-      if (allFlows.length === 0) {
-        logger.info('No flows found — seeding default Google Workspace flow...');
+      const existing = Flow.search('Cancel & Renew AI Ultra');
+      if (existing.length === 0) {
+        logger.info('Seeding default Google Workspace flow...');
         Flow.create({
           name: 'Cancel & Renew AI Ultra Subscription',
           description: 'Cancel Google AI Ultra subscription and buy a new one from Workspace store',
@@ -129,6 +129,8 @@ async function start() {
           ],
         });
         logger.info('Default flow seeded successfully!');
+      } else {
+        logger.info(`Default flow already exists (${existing.length} found), skipping seed.`);
       }
     } catch (seedErr) {
       logger.warn('Flow seed failed', { error: seedErr.message });
