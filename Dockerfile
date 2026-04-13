@@ -3,7 +3,7 @@ FROM node:20-slim AS builder
 
 WORKDIR /app
 COPY package*.json ./
-RUN npm ci --omit=dev
+RUN npm install --omit=dev
 
 # ─── Production Stage ──────────────────────────────
 FROM node:20-slim
