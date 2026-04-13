@@ -45,6 +45,7 @@ class BrowserManager {
 
     const executablePath = this._findChromePath();
     const isHeadless = headless !== undefined ? headless : config.browser.headless;
+    const isRecordingMode = headless === false; // Explicit false = recording mode
     const args = this._buildLaunchArgs();
 
     // Retry launch up to 3 times

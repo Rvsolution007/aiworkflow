@@ -38,6 +38,9 @@ function migrate() {
       steps TEXT NOT NULL DEFAULT '[]',
       category TEXT DEFAULT 'general',
       is_favorite INTEGER DEFAULT 0,
+      timer_enabled INTEGER DEFAULT 0,
+      timer_interval_min INTEGER DEFAULT 0,
+      profile_name TEXT DEFAULT 'default',
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
@@ -86,6 +89,17 @@ function migrate() {
       FOREIGN KEY (execution_id) REFERENCES executions(id) ON DELETE CASCADE
     );
 
+    -- Sessions table (saved browser sessions)
+    CREATE TABLE IF NOT EXISTS sessions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      profile_name TEXT NOT NULL UNIQUE,
+      domain TEXT DEFAULT '',
+      cookies_path TEXT DEFAULT '',
+      last_used DATETIME DEFAULT CURRENT_TIMESTAMP,
+      is_valid INTEGER DEFAULT 1,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
     -- Settings table (key-value store)
     CREATE TABLE IF NOT EXISTS settings (
       key TEXT PRIMARY KEY,
@@ -98,6 +112,16 @@ function migrate() {
     CREATE INDEX IF NOT EXISTS idx_executions_status ON executions(status);
     CREATE INDEX IF NOT EXISTS idx_execution_steps_exec_id ON execution_steps(execution_id);
   `);
+
+  // Migration: Add timer columns to existing flows table if not exists
+  try {
+    db.prepare('SELECT timer_enabled FROM flows LIMIT 1').get();
+  } catch (e) {
+    logger.info('Migrating flows table: adding timer columns...');
+    db.exec('ALTER TABLE flows ADD COLUMN timer_enabled INTEGER DEFAULT 0');
+    db.exec('ALTER TABLE flows ADD COLUMN timer_interval_min INTEGER DEFAULT 0');
+    db.exec('ALTER TABLE flows ADD COLUMN profile_name TEXT DEFAULT \'default\'');
+  }
 
   logger.info('Database migrations complete.');
 }

@@ -158,6 +158,13 @@ async function startWorker() {
       status: result?.status,
       duration: result?.duration,
     });
+    // Notify scheduler for auto-repeat
+    if (result?.status === 'completed' && job?.data?.flow?.id) {
+      try {
+        const scheduler = require('../core/scheduler');
+        scheduler.onFlowCompleted(job.data.flow.id);
+      } catch (e) {}
+    }
   });
 
   worker.on('failed', (job, err) => {

@@ -27,6 +27,10 @@
           <span class="nav-icon">🧠</span>
           <span>AI Builder</span>
         </div>
+        <div class="nav-item" data-section="recorder" id="nav-recorder">
+          <span class="nav-icon">🔴</span>
+          <span>Record Flow</span>
+        </div>
         <div class="nav-item" data-section="flows" id="nav-flows">
           <span class="nav-icon">📋</span>
           <span>My Flows</span>
@@ -47,6 +51,10 @@
         <div class="nav-item" data-section="credentials" id="nav-credentials">
           <span class="nav-icon">🔐</span>
           <span>Credentials</span>
+        </div>
+        <div class="nav-item" data-section="sessions" id="nav-sessions">
+          <span class="nav-icon">🍪</span>
+          <span>Sessions</span>
         </div>
         <div class="nav-item" data-section="settings" id="nav-settings">
           <span class="nav-icon">⚙️</span>
@@ -129,13 +137,110 @@
           </div>
         </div>
 
+        <!-- ═══ Record Flow Section ═══ -->
+        <div class="section" id="section-recorder">
+          <div class="recorder-layout">
+            <!-- Recorder Controls -->
+            <div class="recorder-controls-panel">
+              <div class="recorder-header">
+                <div class="chat-header-icon" style="background:linear-gradient(135deg,#ef4444,#f97316)">🎬</div>
+                <div>
+                  <div class="chat-header-title">Record & Replay</div>
+                  <div class="chat-header-subtitle">Perform actions live — system records everything</div>
+                </div>
+              </div>
+
+              <div class="recorder-controls">
+                <div class="input-group">
+                  <label class="input-label">Browser Profile (for session)</label>
+                  <select class="input" id="recorder-profile-select">
+                    <option value="default">Default Profile</option>
+                    <option value="google_admin">Google Admin</option>
+                    <option value="client1">Client 1</option>
+                    <option value="client2">Client 2</option>
+                    <option value="client3">Client 3</option>
+                  </select>
+                </div>
+
+                <div class="recorder-btn-group">
+                  <button class="btn btn-record" id="recorder-start-btn" onclick="RecorderUI.startRecording()">
+                    🔴 Start Recording
+                  </button>
+                  <button class="btn btn-stop" id="recorder-stop-btn" onclick="RecorderUI.stopRecording()" style="display:none">
+                    ⏹ Stop Recording
+                  </button>
+                  <button class="btn btn-secondary" id="recorder-discard-btn" onclick="RecorderUI.discardRecording()" style="display:none">
+                    🗑️ Discard
+                  </button>
+                </div>
+
+                <!-- Recording indicator -->
+                <div class="recorder-indicator" id="recorder-indicator" style="display:none">
+                  <div class="recorder-indicator-dot"></div>
+                  <span class="recorder-indicator-text">Recording...</span>
+                </div>
+              </div>
+
+              <!-- Recorded steps live preview -->
+              <div class="recorder-steps-container">
+                <div class="recorder-steps-header">
+                  <span>Recorded Steps</span>
+                  <span class="recorder-step-count" id="recorder-step-count">0 steps</span>
+                </div>
+                <div class="recorder-steps-list" id="recorder-steps-list">
+                  <div class="empty-state" style="padding:30px">
+                    <div class="empty-state-icon">🎬</div>
+                    <div class="empty-state-text">No steps recorded yet</div>
+                    <div class="empty-state-subtext">Click Record and interact with the browser</div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Edit & Save panel (shown after recording stops) -->
+              <div class="recorder-edit-panel" id="recorder-edit-panel" style="display:none">
+                <div class="input-group">
+                  <label class="input-label">Flow Name</label>
+                  <input type="text" class="input" id="recorded-flow-name" placeholder="e.g., Cancel & Renew Subscription">
+                </div>
+                <div class="recorder-save-actions">
+                  <button class="btn btn-success" onclick="RecorderUI.saveRecordedFlow()">💾 Save as Flow</button>
+                  <button class="btn btn-secondary" onclick="RecorderUI.discardRecording()">🗑️ Discard</button>
+                </div>
+              </div>
+            </div>
+
+            <!-- Instructions Panel -->
+            <div class="recorder-info-panel">
+              <div class="recorder-info-card">
+                <h3>📋 How it works</h3>
+                <ol class="recorder-steps-guide">
+                  <li><strong>Select Profile</strong> — Choose which browser session to use</li>
+                  <li><strong>Click Record</strong> — A Chrome browser window will open</li>
+                  <li><strong>Do your task</strong> — Navigate, click, type — all recorded automatically</li>
+                  <li><strong>Popups auto-dismissed</strong> — They won't be recorded as steps</li>
+                  <li><strong>Stop Recording</strong> — Edit/remove unwanted steps</li>
+                  <li><strong>Save as Flow</strong> — Run this flow anytime, it replays exactly!</li>
+                </ol>
+              </div>
+              <div class="recorder-info-card">
+                <h3>🍪 Session Persistence</h3>
+                <p>Login once during recording — your session cookies are saved. Next time the flow runs, it <strong>skips login automatically</strong>!</p>
+              </div>
+              <div class="recorder-info-card">
+                <h3>👥 Multiple Accounts</h3>
+                <p>Use different profiles for different accounts. Each profile has its own saved session.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
         <!-- ═══ My Flows Section ═══ -->
         <div class="section" id="section-flows">
           <div class="card-grid" id="flows-grid">
             <div class="empty-state">
               <div class="empty-state-icon">📋</div>
               <div class="empty-state-text">No flows yet</div>
-              <div class="empty-state-subtext">Use AI Builder to create your first automation flow</div>
+              <div class="empty-state-subtext">Use AI Builder or Record Flow to create your first automation</div>
             </div>
           </div>
         </div>
@@ -217,6 +322,20 @@
               <div class="empty-state-icon">🔐</div>
               <div class="empty-state-text">No credentials stored</div>
               <div class="empty-state-subtext">Add credentials for automated login</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ═══ Sessions Section ═══ -->
+        <div class="section" id="section-sessions">
+          <div style="margin-bottom:16px">
+            <p style="font-size:13px;color:var(--text-secondary)">Saved browser sessions allow flows to run without re-logging in. Sessions are saved automatically during recording or execution.</p>
+          </div>
+          <div id="sessions-list">
+            <div class="empty-state">
+              <div class="empty-state-icon">🍪</div>
+              <div class="empty-state-text">No saved sessions</div>
+              <div class="empty-state-subtext">Run or record a flow to save a session</div>
             </div>
           </div>
         </div>
@@ -307,6 +426,7 @@
   <script src="/js/websocket.js"></script>
   <script src="/js/ai-chat.js"></script>
   <script src="/js/flow-builder.js"></script>
+  <script src="/js/recorder-ui.js"></script>
   <script src="/js/app.js"></script>
 </body>
 </html>

@@ -10,9 +10,32 @@ const config = require('../config');
 router.use('/flows', require('./flows'));
 router.use('/credentials', require('./credentials'));
 router.use('/execute', require('./execution'));
+router.use('/recorder', require('./recorder'));
+router.use('/sessions', require('./sessions'));
 
 // Execution listing also at /api/executions
 router.use('/executions', require('./execution'));
+
+// Timer/scheduler status
+const scheduler = require('../core/scheduler');
+router.get('/timers', (req, res) => {
+  res.json({ success: true, timers: scheduler.getAllTimers() });
+});
+
+router.post('/timers/:flowId', (req, res) => {
+  const { enabled, intervalMinutes } = req.body;
+  const flowId = parseInt(req.params.flowId);
+  
+  // Save to database
+  const db = require('../models/database');
+  db.prepare('UPDATE flows SET timer_enabled = ?, timer_interval_min = ? WHERE id = ?')
+    .run(enabled ? 1 : 0, intervalMinutes || 0, flowId);
+
+  // Update scheduler
+  scheduler.setEnabled(flowId, enabled, intervalMinutes);
+
+  res.json({ success: true, status: scheduler.getStatus(flowId) });
+});
 
 // Health check — includes Redis status
 router.get('/health', async (req, res) => {

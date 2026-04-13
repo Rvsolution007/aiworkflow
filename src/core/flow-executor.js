@@ -51,6 +51,13 @@ class FlowExecutor {
       const profileName = flow.profileName || `flow_${flow.id || 'temp'}`;
       const { page } = await this.browserManager.launch({ profileName });
 
+      // 1.5. Load saved session cookies (enables login-free replays)
+      const SessionManager = require('./session-manager');
+      const hadSession = await SessionManager.loadCookies(profileName, page);
+      if (hadSession) {
+        logger.info('Loaded saved session cookies — login may be skipped');
+      }
+
       // 2. Initialize human behavior engine
       this.human = new HumanBehavior(page);
       await this.human.init();
@@ -653,6 +660,15 @@ class FlowExecutor {
 
       // Handle post-login screens (recovery, 2FA, verification prompts)
       await this._handlePostLoginScreens(page);
+
+      // Save session cookies for future login-free replays
+      try {
+        const SessionManager = require('./session-manager');
+        await SessionManager.saveCookies('google_admin', page);
+        logger.info('Session cookies saved after login');
+      } catch (e) {
+        logger.debug('Could not save session cookies (non-critical)');
+      }
 
       logger.info('Google login completed');
     } catch (err) {

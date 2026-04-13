@@ -79,6 +79,14 @@ function broadcast(data) {
 // Share broadcast with worker
 setWsBroadcast(broadcast);
 
+// Share broadcast with recorder
+const { setRecorderBroadcast } = require('./routes/recorder');
+setRecorderBroadcast(broadcast);
+
+// Setup scheduler
+const scheduler = require('./core/scheduler');
+const Execution = require('./models/Execution');
+
 // ─── Start Server + Worker ─────────────────────────────
 
 async function start() {
@@ -158,6 +166,25 @@ async function start() {
       });
       logger.info('Flows will still be created/managed, but execution requires Redis');
     }
+
+    // Start scheduler (auto-repeat timer)
+    scheduler.setExecuteCallback(async (flowId) => {
+      const flow = Flow.findById(flowId);
+      if (!flow) return;
+      const execution = Execution.create({
+        flow_id: flowId,
+        flow_name: flow.name,
+        total_steps: flow.steps.length,
+      });
+      try {
+        const { addFlowJob } = require('./queue/queue');
+        await addFlowJob({ flow, executionId: execution.id });
+        logger.info(`[SCHEDULER] Auto-queued flow "${flow.name}" (exec: ${execution.id})`);
+      } catch (err) {
+        logger.error(`[SCHEDULER] Failed to queue flow ${flowId}`, { error: err.message });
+      }
+    });
+    scheduler.loadFromDB();
 
     // Start HTTP server
     server.listen(config.port, () => {

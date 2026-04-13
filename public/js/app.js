@@ -32,6 +32,9 @@ const App = {
     // Setup WebSocket listeners for execution progress
     WS.on('execution_progress', (data) => Execution.handleProgress(data));
     WS.on('execution_complete', (data) => Execution.handleComplete(data));
+
+    // Initialize recorder UI
+    RecorderUI.init();
   },
 
   /**
@@ -53,10 +56,12 @@ const App = {
     // Update title
     const titles = {
       'ai-builder': '🧠 AI Builder',
+      'recorder': '🔴 Record Flow',
       'flows': '📋 My Flows',
       'execution': '▶️ Run Flow',
       'history': '📊 History',
       'credentials': '🔐 Credentials',
+      'sessions': '🍪 Sessions',
       'settings': '⚙️ Settings',
     };
     document.getElementById('page-title').textContent = titles[section] || section;
@@ -66,6 +71,7 @@ const App = {
     if (section === 'history') this.loadExecutions();
     if (section === 'execution') this.loadFlowsForSelect();
     if (section === 'credentials') this.loadCredentials();
+    if (section === 'sessions') SessionsUI.loadSessions();
   },
 
   /**
@@ -185,13 +191,17 @@ const App = {
       <div class="flow-card" onclick="App.viewFlow(${flow.id})">
         <div class="flow-card-actions">
           <button class="btn btn-sm btn-primary" onclick="event.stopPropagation(); App.executeFlow(${flow.id})" title="Run">▶️</button>
+          <button class="btn btn-sm btn-secondary" onclick="event.stopPropagation(); TimerUI.setTimer(${flow.id})" title="Timer">⏱️</button>
           <button class="btn btn-sm btn-danger" onclick="event.stopPropagation(); App.deleteFlow(${flow.id})" title="Delete">🗑️</button>
         </div>
         <div class="flow-card-name">${this._escapeHtml(flow.name)}</div>
         <div class="flow-card-desc">${this._escapeHtml(flow.description || 'No description')}</div>
         <div class="flow-card-meta">
           <div class="flow-card-steps">⚡ ${flow.steps.length} steps</div>
-          <div class="flow-card-category">${flow.category || 'general'}</div>
+          <div class="flow-card-badges">
+            ${flow.timer_enabled ? '<span class="flow-timer-badge">⏱ ' + flow.timer_interval_min + 'min</span>' : ''}
+            <div class="flow-card-category">${flow.category || 'general'}</div>
+          </div>
         </div>
       </div>
     `).join('');
