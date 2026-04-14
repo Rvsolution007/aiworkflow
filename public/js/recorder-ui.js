@@ -334,6 +334,7 @@ const RecorderUI = {
 
     // ─── Keyboard Input ────────────────────────
     if (keyboardInput) {
+      // Handle regular typing
       keyboardInput.addEventListener('input', (e) => {
         if (!this.isRecording) return;
         const text = keyboardInput.value;
@@ -343,8 +344,33 @@ const RecorderUI = {
         }
       });
 
+      // Handle paste (Ctrl+V / right-click paste)
+      keyboardInput.addEventListener('paste', (e) => {
+        if (!this.isRecording) return;
+        e.preventDefault();
+        const pasted = (e.clipboardData || window.clipboardData).getData('text');
+        if (pasted) {
+          WS.send({ type: 'remote_type', text: pasted });
+          keyboardInput.value = '';
+          App.toast(`📋 Pasted: "${pasted.substring(0, 30)}${pasted.length > 30 ? '...' : ''}"`, 'info');
+        }
+      });
+
+      // Handle special keys
       keyboardInput.addEventListener('keydown', (e) => {
         if (!this.isRecording) return;
+
+        // Allow Ctrl+V (paste) to bubble to paste handler
+        if ((e.ctrlKey || e.metaKey) && e.key === 'v') {
+          return; // Let paste event handle it
+        }
+
+        // Allow Ctrl+A, Ctrl+C in text fields
+        if ((e.ctrlKey || e.metaKey) && ['a', 'c'].includes(e.key)) {
+          WS.send({ type: 'remote_key', key: e.key === 'a' ? 'Control+a' : 'Control+c' });
+          return;
+        }
+
         const specialKeys = ['Enter', 'Tab', 'Escape', 'Backspace', 'Delete',
           'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight',
           'Home', 'End', 'PageUp', 'PageDown'];
@@ -359,6 +385,16 @@ const RecorderUI = {
     screen.addEventListener('mousedown', () => {
       if (keyboardInput) {
         setTimeout(() => keyboardInput.focus(), 50);
+      }
+    });
+
+    // Re-focus keyboard input after clicking approval buttons
+    document.addEventListener('click', (e) => {
+      const target = e.target;
+      if (target && (target.id === 'step-approve-btn' || target.id === 'step-reject-btn')) {
+        if (keyboardInput && this.isRecording) {
+          setTimeout(() => keyboardInput.focus(), 100);
+        }
       }
     });
 

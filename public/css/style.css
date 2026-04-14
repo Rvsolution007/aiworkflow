@@ -2653,19 +2653,22 @@ select.input {
   font-size: 11px;
 }
 
-/* Hidden keyboard capture textarea */
+/* Hidden keyboard capture textarea — needs enough size to be focusable */
 .remote-keyboard-capture {
   position: absolute;
-  top: 0;
-  left: 0;
-  width: 1px;
-  height: 1px;
+  top: 50%;
+  left: 50%;
+  width: 30px;
+  height: 30px;
   opacity: 0;
   border: none;
   outline: none;
   resize: none;
   overflow: hidden;
-  z-index: -1;
+  z-index: 50;
+  pointer-events: none;
+  font-size: 16px; /* Prevents zoom on iOS */
+  caret-color: transparent;
 }
 
 /* Click ripple effect */
