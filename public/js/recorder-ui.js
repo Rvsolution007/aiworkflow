@@ -333,11 +333,22 @@ const RecorderUI = {
     if (screen && data.frame) {
       screen.src = 'data:image/jpeg;base64,' + data.frame;
 
-      // Hide loading on first frame
+      // Hide loading on first frame and force-show the image
       if (!this._receivedFirstFrame) {
         this._receivedFirstFrame = true;
-        if (loading) loading.style.display = 'none';
+        console.log('[RemoteViewer] First frame received! Showing browser screen.');
+        // Force hide loading overlay
+        if (loading) {
+          loading.style.display = 'none';
+          loading.style.visibility = 'hidden';
+          loading.style.zIndex = '-1';
+        }
+        // Force show the browser screen image
         screen.style.display = 'block';
+        screen.style.visibility = 'visible';
+        screen.style.minHeight = '300px';
+        screen.style.zIndex = '10';
+        screen.style.position = 'relative';
       }
 
       // Update URL bar
