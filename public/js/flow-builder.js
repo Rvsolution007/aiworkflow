@@ -159,6 +159,36 @@ const FlowBuilder = {
   },
 
   /**
+   * Continue recording — append new steps to existing flow
+   */
+  async continueRecording() {
+    if (!this.currentFlow || !this.currentFlow.steps || this.currentFlow.steps.length === 0) {
+      App.toast('No flow to continue. Create a flow first.', 'warning');
+      return;
+    }
+
+    // Save flow first (so we have the ID)
+    const saved = await this.saveFlow();
+    if (!saved) return;
+
+    // Store the base steps and flow ID for merging later
+    RecorderUI._continueFlowId = this.flowId || saved.id;
+    RecorderUI._continueFlowName = document.getElementById('flow-name-input').value.trim();
+    RecorderUI._continueBaseSteps = [...this.currentFlow.steps]; // Copy existing steps
+    RecorderUI._continueProfile = this.currentFlow.profileName || 'default';
+
+    App.toast(`📎 Base flow saved (${this.currentFlow.steps.length} steps). Starting recording to add more...`, 'info');
+
+    // Switch to Recorder tab
+    App.navigateTo('recorder');
+
+    // Auto-start recording after a short delay
+    setTimeout(() => {
+      RecorderUI.startRecording();
+    }, 500);
+  },
+
+  /**
    * Clear the current flow
    */
   clearFlow() {

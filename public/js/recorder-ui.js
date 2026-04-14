@@ -81,13 +81,63 @@ const RecorderUI = {
 
       if (data.success) {
         this.isRecording = false;
-        this.recordedSteps = data.steps || [];
+        const newSteps = data.steps || [];
         this.selectedProfile = data.profileName || this.selectedProfile || 'default';
         this._setRecordingUI(false);
         this._showViewer(false);
-        this._renderRecordedSteps();
-        this._showEditMode();
-        App.toast(`✅ Recording stopped! ${data.stepCount} steps captured.`, 'success');
+
+        // Check if we're continuing an existing flow
+        if (this._continueBaseSteps && this._continueBaseSteps.length > 0) {
+          // MERGE: existing steps + new recorded steps
+          const mergedSteps = [...this._continueBaseSteps, ...newSteps];
+          const flowId = this._continueFlowId;
+          const flowName = this._continueFlowName;
+          const flowProfile = this._continueProfile;
+
+          App.toast(`✅ ${newSteps.length} new steps recorded! Merging with ${this._continueBaseSteps.length} existing steps...`, 'success');
+
+          // Clear continue state
+          this._continueBaseSteps = null;
+          this._continueFlowId = null;
+          this._continueFlowName = null;
+          this._continueProfile = null;
+
+          // Auto-save merged flow
+          try {
+            const saveRes = await fetch(`/api/flows/${flowId}`, {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                name: flowName,
+                steps: mergedSteps,
+                profileName: flowProfile,
+              }),
+            });
+            const saveData = await saveRes.json();
+            if (saveData.success) {
+              App.toast(`✅ Flow "${flowName}" updated! Now has ${mergedSteps.length} total steps.`, 'success');
+              App.loadFlows();
+            }
+          } catch (e) {
+            App.toast(`Save failed: ${e.message}`, 'error');
+          }
+
+          // Switch to FlowBuilder with merged steps
+          App.navigateTo('ai-builder');
+          FlowBuilder.setFlow({
+            id: flowId,
+            flowName,
+            steps: mergedSteps,
+            profileName: flowProfile,
+            category: 'recorded',
+          });
+        } else {
+          // Normal recording — show edit mode
+          this.recordedSteps = newSteps;
+          this._renderRecordedSteps();
+          this._showEditMode();
+          App.toast(`✅ Recording stopped! ${data.stepCount} steps captured.`, 'success');
+        }
       } else {
         App.toast(`Stop failed: ${data.message}`, 'error');
       }
