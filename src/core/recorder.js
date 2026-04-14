@@ -318,6 +318,61 @@ class Recorder {
         }
       });
 
+      // Listen for popup windows (payment, bank sign-in, etc.)
+      const browser = this.browserManager.browser;
+      if (browser) {
+        browser.on('targetcreated', async (target) => {
+          if (target.type() === 'page') {
+            try {
+              const popupPage = await target.page();
+              if (!popupPage) return;
+              
+              logger.info(`🔲 Popup window detected: ${target.url()}`);
+              
+              // Save the main page reference
+              if (!this._mainPage) {
+                this._mainPage = this.page;
+              }
+              
+              // Switch to popup page for screen streaming and input
+              this.page = popupPage;
+              
+              // Inject recording script into popup
+              try {
+                await popupPage.exposeFunction('__recordEvent', (eventJson) => {
+                  this._handleRecordedEvent(eventJson);
+                });
+              } catch (e) {} // May already be exposed
+              await popupPage.evaluate(RECORDING_SCRIPT).catch(() => {});
+              
+              // Notify frontend
+              if (this.onEvent) {
+                this.onEvent({
+                  type: 'recorder_event',
+                  step: {
+                    action: 'navigate',
+                    description: `Popup opened: ${target.url()}`,
+                    params: { url: target.url() },
+                  },
+                  stepIndex: this.recordedSteps.length,
+                });
+              }
+              
+              // When popup closes, switch back to main page
+              popupPage.on('close', () => {
+                logger.info('🔲 Popup window closed — switching back to main page');
+                if (this._mainPage) {
+                  this.page = this._mainPage;
+                  this._mainPage = null;
+                }
+              });
+            } catch (err) {
+              logger.warn(`Popup handling failed: ${err.message}`);
+            }
+          }
+        });
+      }
+
       // Start popup auto-dismiss background watcher
       this._startPopupWatcher();
 
