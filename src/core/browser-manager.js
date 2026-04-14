@@ -56,15 +56,19 @@ class BrowserManager {
 
         // Build environment for browser process
         const browserEnv = { ...process.env };
-        // Ensure DISPLAY is set for Xvfb on Linux (recording mode)
-        if (process.platform === 'linux' && !isHeadless) {
-          browserEnv.DISPLAY = process.env.DISPLAY || ':99';
-          logger.info(`Recording mode on Linux — using DISPLAY=${browserEnv.DISPLAY}`);
+
+        // On Linux server, always use headless 'new' mode for recording
+        // Chrome's "new" headless mode has FULL rendering — no Xvfb needed!
+        // page.screenshot() works perfectly, and user interacts via Remote Browser Viewer
+        const useHeadless = process.platform === 'linux' ? 'new' : (isHeadless ? 'new' : false);
+
+        if (process.platform === 'linux') {
+          logger.info('Linux detected — using headless "new" mode (full rendering, no display needed)');
         }
 
         this.browser = await puppeteer.launch({
           executablePath,
-          headless: isHeadless ? 'new' : false,
+          headless: useHeadless,
           args,
           defaultViewport: {
             width: this.profile.viewport.width,
