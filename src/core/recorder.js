@@ -631,14 +631,24 @@ class Recorder {
       if (!url.startsWith('http://') && !url.startsWith('https://')) {
         url = 'https://' + url;
       }
-      await this.page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
+      logger.info(`Remote navigate starting: ${url}`);
 
-      // Re-inject recording script and re-expose __recordEvent after navigation
-      try {
-        await this.page.evaluate(RECORDING_SCRIPT).catch(() => {});
-      } catch (e) {}
-
-      logger.debug(`Remote navigate to: ${url}`);
+      // Fire navigation without blocking — use short timeout so UI doesn't freeze
+      // The screen streaming will show the page as it loads
+      this.page.goto(url, { waitUntil: 'load', timeout: 15000 })
+        .then(() => {
+          logger.info(`Remote navigate completed: ${url}`);
+          // Re-inject recording script after navigation
+          this.page.evaluate(RECORDING_SCRIPT).catch(() => {});
+        })
+        .catch((err) => {
+          // Timeout is OK — page may still be usable
+          logger.warn(`Remote navigate timeout/error (non-fatal): ${err.message}`);
+          // Still try to re-inject script
+          if (this.page) {
+            this.page.evaluate(RECORDING_SCRIPT).catch(() => {});
+          }
+        });
     } catch (err) {
       logger.warn(`Remote navigate failed: ${err.message}`);
     }
