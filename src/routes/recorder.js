@@ -91,6 +91,19 @@ router.post('/reset', async (req, res) => {
 });
 
 /**
+ * POST /api/recorder/force-reset
+ * Alias for reset — used by frontend force reset button
+ */
+router.post('/force-reset', async (req, res) => {
+  try {
+    const result = await recorder.forceReset();
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+/**
  * POST /api/recorder/navigate
  * Navigate the recording browser to a URL (REST API fallback)
  */

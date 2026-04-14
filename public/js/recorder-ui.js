@@ -38,10 +38,15 @@ const RecorderUI = {
     // If continuing an existing flow, keep the base steps
     if (this._continueBaseSteps && this._continueBaseSteps.length > 0) {
       this.recordedSteps = [...this._continueBaseSteps];
-      this._continueBaseIndex = this._continueBaseSteps.length; // Mark where new steps start
+      this._continueBaseIndex = this._continueBaseSteps.length;
     } else {
+      // FRESH recording — clear ALL continue state
       this.recordedSteps = [];
       this._continueBaseIndex = 0;
+      this._continueBaseSteps = null;
+      this._continueFlowId = null;
+      this._continueFlowName = null;
+      this._continueProfile = null;
     }
     this._receivedFirstFrame = false;
     this._frameCount = 0;
@@ -65,6 +70,17 @@ const RecorderUI = {
         this._setRecordingUI(true, 'Recording — Use the viewer to interact');
         this._renderRecordedSteps();
         App.toast('🔴 Recording started! Interact using the Remote Browser Viewer.', 'success');
+      } else if (data.alreadyRecording) {
+        // Recording already active — offer force reset
+        this._setRecordingUI(false);
+        this._showViewer(false);
+        if (confirm('⚠️ A recording is already active.\n\nDo you want to FORCE STOP it and start a new one?')) {
+          await this.forceReset();
+          // Retry after reset
+          setTimeout(() => this.startRecording(), 1000);
+        } else {
+          App.toast('Recording cancelled. Stop the active recording first.', 'info');
+        }
       } else {
         this._setRecordingUI(false);
         this._showViewer(false);
@@ -74,6 +90,23 @@ const RecorderUI = {
       this._setRecordingUI(false);
       this._showViewer(false);
       App.toast(`Error: ${err.message}`, 'error');
+    }
+  },
+
+  /**
+   * Force reset — kill any stuck recording
+   */
+  async forceReset() {
+    try {
+      const res = await fetch('/api/recorder/force-reset', { method: 'POST' });
+      const data = await res.json();
+      this.isRecording = false;
+      this.recordedSteps = [];
+      this._continueBaseSteps = null;
+      this._continueBaseIndex = 0;
+      App.toast('🔄 Previous recording force-stopped.', 'info');
+    } catch (err) {
+      App.toast(`Reset failed: ${err.message}`, 'error');
     }
   },
 
