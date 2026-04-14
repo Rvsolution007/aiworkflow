@@ -34,7 +34,15 @@ const RecorderUI = {
     const profileName = document.getElementById('recorder-profile-select')?.value || 'default';
     const startUrl = document.getElementById('recorder-start-url')?.value?.trim() || '';
     this.selectedProfile = profileName;
-    this.recordedSteps = [];
+    
+    // If continuing an existing flow, keep the base steps
+    if (this._continueBaseSteps && this._continueBaseSteps.length > 0) {
+      this.recordedSteps = [...this._continueBaseSteps];
+      this._continueBaseIndex = this._continueBaseSteps.length; // Mark where new steps start
+    } else {
+      this.recordedSteps = [];
+      this._continueBaseIndex = 0;
+    }
     this._receivedFirstFrame = false;
     this._frameCount = 0;
 
@@ -688,21 +696,28 @@ const RecorderUI = {
       scroll: '📜', select: '📝', keyboard: '⌨️', screenshot: '📸',
     };
 
-    list.innerHTML = this.recordedSteps.map((step, i) => `
-      <div class="recorder-step" data-index="${i}">
-        <div class="recorder-step-num">${i + 1}</div>
-        <div class="recorder-step-icon">${actionIcons[step.action] || '⚡'}</div>
-        <div class="recorder-step-content">
-          <div class="recorder-step-action">${App._escapeHtml(step.action)}</div>
-          <div class="recorder-step-desc">${App._escapeHtml(step.description || '')}</div>
-        </div>
-        <div class="recorder-step-actions">
-          <button class="btn-step-action" onclick="RecorderUI.moveStepUp(${i})" title="Move up" ${i === 0 ? 'disabled' : ''}>↑</button>
-          <button class="btn-step-action" onclick="RecorderUI.moveStepDown(${i})" title="Move down" ${i === this.recordedSteps.length - 1 ? 'disabled' : ''}>↓</button>
-          <button class="btn-step-action btn-step-delete" onclick="RecorderUI.removeStep(${i})" title="Remove">✕</button>
-        </div>
-      </div>
-    `).join('');
+    const baseIdx = this._continueBaseIndex || 0;
+
+    list.innerHTML = this.recordedSteps.map((step, i) => {
+      const isBase = i < baseIdx;
+      const separator = (i === baseIdx && baseIdx > 0) 
+        ? `<div class="recorder-step-separator">── ✨ New steps below ──</div>` 
+        : '';
+      return `${separator}
+        <div class="recorder-step ${isBase ? 'recorder-step-base' : 'recorder-step-new'}" data-index="${i}">
+          <div class="recorder-step-num">${i + 1}</div>
+          <div class="recorder-step-icon">${actionIcons[step.action] || '⚡'}</div>
+          <div class="recorder-step-content">
+            <div class="recorder-step-action">${App._escapeHtml(step.action)}${isBase ? ' <span style="font-size:10px;color:#94a3b8">(saved)</span>' : ''}</div>
+            <div class="recorder-step-desc">${App._escapeHtml(step.description || '')}</div>
+          </div>
+          <div class="recorder-step-actions">
+            <button class="btn-step-action" onclick="RecorderUI.moveStepUp(${i})" title="Move up" ${i === 0 ? 'disabled' : ''}>↑</button>
+            <button class="btn-step-action" onclick="RecorderUI.moveStepDown(${i})" title="Move down" ${i === this.recordedSteps.length - 1 ? 'disabled' : ''}>↓</button>
+            <button class="btn-step-action btn-step-delete" onclick="RecorderUI.removeStep(${i})" title="Remove">✕</button>
+          </div>
+        </div>`;
+    }).join('');
   },
 
   _showEditMode() {
