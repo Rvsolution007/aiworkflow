@@ -82,6 +82,7 @@ const RecorderUI = {
       if (data.success) {
         this.isRecording = false;
         this.recordedSteps = data.steps || [];
+        this.selectedProfile = data.profileName || this.selectedProfile || 'default';
         this._setRecordingUI(false);
         this._showViewer(false);
         this._renderRecordedSteps();

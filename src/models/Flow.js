@@ -46,7 +46,7 @@ const Flow = {
   /**
    * Update a flow
    */
-  update(id, { name, description, steps, category, is_favorite }) {
+  update(id, { name, description, steps, category, is_favorite, profileName }) {
     const existing = this.findById(id);
     if (!existing) return null;
 
@@ -57,6 +57,7 @@ const Flow = {
         steps = COALESCE(?, steps),
         category = COALESCE(?, category),
         is_favorite = COALESCE(?, is_favorite),
+        profile_name = COALESCE(?, profile_name),
         updated_at = CURRENT_TIMESTAMP
       WHERE id = ?
     `);
@@ -66,6 +67,7 @@ const Flow = {
       steps ? JSON.stringify(steps) : null,
       category || null,
       is_favorite !== undefined ? (is_favorite ? 1 : 0) : null,
+      profileName || null,
       id
     );
     return this.findById(id);

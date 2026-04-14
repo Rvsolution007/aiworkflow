@@ -435,8 +435,8 @@ class Recorder {
     // Convert raw events to flow steps
     const steps = this._convertToFlowSteps();
 
-    logger.info(`Recording stopped. Captured ${steps.length} steps.`);
-    return { success: true, steps, stepCount: steps.length };
+    logger.info(`Recording stopped. Captured ${steps.length} steps for profile: ${this.profileName}`);
+    return { success: true, steps, stepCount: steps.length, profileName: this.profileName };
   }
 
   /**
@@ -713,8 +713,9 @@ class Recorder {
 
   /**
    * Handle remote URL navigation from frontend
+   * CRITICAL: This method must NEVER block. All navigation is fire-and-forget.
    */
-  async handleRemoteNavigate(url) {
+  handleRemoteNavigate(url) {
     if (!this.page || !this.browserManager?.isAlive()) {
       logger.warn('Cannot navigate — no active page/browser');
       return;
@@ -734,33 +735,27 @@ class Recorder {
 
       logger.info(`Remote navigate → ${url}`);
 
-      // PRIMARY: Use window.location.href (most reliable, works on all pages)
-      try {
-        const navPromise = this.page.evaluate((targetUrl) => {
-          window.location.href = targetUrl;
-        }, url);
-        const navTimeout = new Promise((_, reject) => setTimeout(() => reject(new Error('nav timeout')), 5000));
-        await Promise.race([navPromise, navTimeout]);
-        logger.info(`Navigation triggered via window.location: ${url}`);
-      } catch (e1) {
-        logger.warn(`window.location failed/timeout (${e1.message}), trying page.goto...`);
-        // FALLBACK: Use page.goto with short timeout
-        try {
-          await this.page.goto(url, { waitUntil: 'domcontentloaded', timeout: 8000 });
-          logger.info(`Navigation via page.goto succeeded: ${url}`);
-        } catch (e2) {
-          logger.warn(`page.goto also failed: ${e2.message} — page may still be usable`);
-        }
-      }
+      // FIRE AND FORGET — never await, never block
+      // Use page.goto() which handles navigation properly
+      this.page.goto(url, { waitUntil: 'domcontentloaded', timeout: 15000 })
+        .then(() => {
+          logger.info(`Navigate completed: ${url}`);
+          // Re-inject recording script after page loads
+          if (this.page) {
+            this.page.evaluate(RECORDING_SCRIPT).catch(() => {});
+          }
+        })
+        .catch((err) => {
+          // Navigation timeout or error — page may still be usable
+          logger.warn(`Navigate error (non-fatal): ${err.message}`);
+          // Still try to re-inject script
+          if (this.page) {
+            this.page.evaluate(RECORDING_SCRIPT).catch(() => {});
+          }
+        });
 
-      // Wait a moment for navigation to begin, then re-inject recording script
-      setTimeout(() => {
-        if (this.page) {
-          this.page.evaluate(RECORDING_SCRIPT).catch(() => {});
-        }
-      }, 3000);
     } catch (err) {
-      logger.error(`Remote navigate failed completely: ${err.message}`);
+      logger.error(`Remote navigate failed: ${err.message}`);
     }
   }
 

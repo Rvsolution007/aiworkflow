@@ -46,6 +46,7 @@ router.post('/stop', async (req, res) => {
       success: result.success,
       steps: result.steps,
       stepCount: result.stepCount,
+      profileName: result.profileName || 'default',
       message: result.message,
     });
   } catch (err) {
