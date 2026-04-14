@@ -185,6 +185,29 @@ const RecorderUI = {
     this._renderRecordedSteps();
   },
 
+  /**
+   * Add a manual wait step to the recording
+   */
+  addWaitStep() {
+    const secondsInput = document.getElementById('recorder-wait-seconds');
+    const seconds = parseInt(secondsInput?.value) || 60;
+    
+    if (seconds < 1 || seconds > 300) {
+      App.toast('Wait time must be between 1 and 300 seconds', 'warning');
+      return;
+    }
+
+    const waitStep = {
+      action: 'wait',
+      description: `Wait ${seconds} seconds`,
+      params: { duration: seconds * 1000 },
+    };
+
+    this.recordedSteps.push(waitStep);
+    this._renderRecordedSteps();
+    App.toast(`⏱ Added wait step: ${seconds} seconds`, 'success');
+  },
+
   // ─── Remote Browser Viewer ─────────────────────
 
   /**
@@ -351,8 +374,8 @@ const RecorderUI = {
         screen.style.position = 'relative';
       }
 
-      // Update URL bar
-      if (urlInput && data.url) {
+      // Update URL bar only when user is NOT actively editing it
+      if (urlInput && data.url && document.activeElement !== urlInput) {
         urlInput.value = data.url;
       }
 
@@ -408,11 +431,15 @@ const RecorderUI = {
     const discardBtn = document.getElementById('recorder-discard-btn');
     const indicator = document.getElementById('recorder-indicator');
     const profileSelect = document.getElementById('recorder-profile-select');
+    const waitControls = document.getElementById('recorder-wait-controls');
+    const startUrlGroup = document.getElementById('recorder-start-url')?.parentElement;
 
     if (startBtn) startBtn.style.display = recording ? 'none' : 'inline-flex';
     if (stopBtn) stopBtn.style.display = recording ? 'inline-flex' : 'none';
     if (discardBtn) discardBtn.style.display = recording ? 'inline-flex' : 'none';
     if (profileSelect) profileSelect.disabled = recording;
+    if (waitControls) waitControls.style.display = recording ? 'block' : 'none';
+    if (startUrlGroup) startUrlGroup.style.display = recording ? 'none' : 'block';
 
     if (indicator) {
       if (recording) {
