@@ -5,12 +5,14 @@
 
 const FlowBuilder = {
   currentFlow: null,
+  flowId: null, // Track existing flow ID for update vs create
 
   /**
    * Set flow data and render preview
    */
   setFlow(flow) {
     this.currentFlow = flow;
+    this.flowId = flow.id || null; // Store flow ID if editing existing flow
     this.renderSteps(flow.steps);
 
     // Show actions and footer
@@ -19,7 +21,7 @@ const FlowBuilder = {
 
     // Set flow name in input
     const nameInput = document.getElementById('flow-name-input');
-    nameInput.value = flow.flowName || '';
+    nameInput.value = flow.flowName || flow.name || '';
   },
 
   /**
@@ -32,8 +34,8 @@ const FlowBuilder = {
       container.innerHTML = `
         <div class="empty-state">
           <div class="empty-state-icon">🤖</div>
-          <div class="empty-state-text">No flow generated yet</div>
-          <div class="empty-state-subtext">Chat with AI to generate automation steps</div>
+          <div class="empty-state-text">No steps in this flow</div>
+          <div class="empty-state-subtext">Chat with AI or record to add steps</div>
         </div>
       `;
       return;
@@ -54,33 +56,38 @@ const FlowBuilder = {
       extract_text: '📄',
     };
 
-    container.innerHTML = steps.map((step, i) => `
-      <div class="flow-step" data-index="${i}">
-        <div class="flow-step-index">${i + 1}</div>
-        <div class="flow-step-content">
-          <div class="flow-step-action">
-            ${actionIcons[step.action] || '⚡'} ${step.action}
+    container.innerHTML = `
+      <div class="flow-steps-count">${steps.length} steps</div>
+      ${steps.map((step, i) => `
+        <div class="flow-step" data-index="${i}">
+          <div class="flow-step-index">${i + 1}</div>
+          <div class="flow-step-content">
+            <div class="flow-step-action">
+              ${actionIcons[step.action] || '⚡'} ${(step.action || '').toUpperCase()}
+            </div>
+            <div class="flow-step-desc" title="${this._escapeHtml(step.description || '')}">
+              ${step.description || this._getStepSummary(step)}
+            </div>
           </div>
-          <div class="flow-step-desc" title="${this._escapeHtml(step.description || '')}">
-            ${step.description || this._getStepSummary(step)}
-          </div>
+          <button class="flow-step-delete-btn" onclick="event.stopPropagation(); FlowBuilder.removeStep(${i})" title="Delete this step">✕</button>
         </div>
-        <span class="flow-step-remove" onclick="FlowBuilder.removeStep(${i})" title="Remove step">✕</span>
-      </div>
-    `).join('');
+      `).join('')}
+    `;
   },
 
   /**
    * Remove a step from the current flow
    */
   removeStep(index) {
-    if (!this.currentFlow) return;
+    if (!this.currentFlow || !this.currentFlow.steps) return;
+    const removedStep = this.currentFlow.steps[index];
     this.currentFlow.steps.splice(index, 1);
     this.renderSteps(this.currentFlow.steps);
+    App.toast(`Step ${index + 1} removed: ${removedStep?.action || 'unknown'}`, 'info');
   },
 
   /**
-   * Save the current flow
+   * Save the current flow (creates new or updates existing)
    */
   async saveFlow() {
     if (!this.currentFlow) {
@@ -95,21 +102,37 @@ const FlowBuilder = {
     }
 
     try {
-      const response = await fetch('/api/flows', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name,
-          description: this.currentFlow.description || '',
-          steps: this.currentFlow.steps,
-          category: this.currentFlow.category || 'general',
-        }),
-      });
+      let response;
+      const payload = {
+        name,
+        description: this.currentFlow.description || '',
+        steps: this.currentFlow.steps,
+        category: this.currentFlow.category || 'general',
+        profileName: this.currentFlow.profileName || 'default',
+      };
+
+      if (this.flowId) {
+        // UPDATE existing flow
+        response = await fetch(`/api/flows/${this.flowId}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+      } else {
+        // CREATE new flow
+        response = await fetch('/api/flows', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+      }
 
       const data = await response.json();
 
       if (data.success) {
-        App.toast(`Flow "${name}" saved! ✅`, 'success');
+        // Store the ID so future saves update instead of creating duplicates
+        this.flowId = data.flow.id;
+        App.toast(`Flow "${name}" ${this.flowId ? 'updated' : 'saved'}! ✅`, 'success');
         App.loadFlows();
         return data.flow;
       } else {
@@ -140,6 +163,7 @@ const FlowBuilder = {
    */
   clearFlow() {
     this.currentFlow = null;
+    this.flowId = null;
     document.getElementById('flow-preview-actions').style.display = 'none';
     document.getElementById('flow-preview-footer').style.display = 'none';
     this.renderSteps([]);

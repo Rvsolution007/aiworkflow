@@ -500,10 +500,12 @@ const App = {
       if (data.success) {
         this.navigateTo('ai-builder');
         FlowBuilder.setFlow({
+          id: data.flow.id,
           flowName: data.flow.name,
           description: data.flow.description,
           steps: data.flow.steps,
           category: data.flow.category,
+          profileName: data.flow.profileName || data.flow.profile_name || 'default',
         });
       }
     } catch (err) {
