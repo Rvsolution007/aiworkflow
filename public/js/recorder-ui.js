@@ -190,100 +190,99 @@ const RecorderUI = {
    * Setup mouse/keyboard event handlers on the remote browser viewer
    */
   _setupRemoteViewerEvents() {
-    // Wait for DOM to be ready
-    document.addEventListener('DOMContentLoaded', () => {
-      const screen = document.getElementById('remote-browser-screen');
-      const wrapper = document.getElementById('remote-browser-canvas-wrapper');
-      const urlInput = document.getElementById('remote-url-input');
-      const urlGoBtn = document.getElementById('url-go-btn');
-      const keyboardInput = document.getElementById('remote-keyboard-input');
+    // DOM is already ready when init() is called (scripts at bottom of body)
+    const screen = document.getElementById('remote-browser-screen');
+    const wrapper = document.getElementById('remote-browser-canvas-wrapper');
+    const urlInput = document.getElementById('remote-url-input');
+    const urlGoBtn = document.getElementById('url-go-btn');
+    const keyboardInput = document.getElementById('remote-keyboard-input');
 
-      if (!screen || !wrapper) return;
+    if (!screen || !wrapper) {
+      console.warn('[RemoteViewer] Elements not found, retrying in 500ms...');
+      setTimeout(() => this._setupRemoteViewerEvents(), 500);
+      return;
+    }
 
-      // ─── Mouse Click ───────────────────────────
-      screen.addEventListener('click', (e) => {
+    console.log('[RemoteViewer] Event handlers registered successfully');
+
+    // ─── Mouse Click ───────────────────────────
+    screen.addEventListener('click', (e) => {
+      if (!this.isRecording) return;
+      e.preventDefault();
+      const coords = this._getScaledCoords(e, screen);
+      WS.send({ type: 'remote_click', x: coords.x, y: coords.y });
+
+      // Show click ripple effect
+      this._showClickRipple(e, wrapper);
+
+      // Focus keyboard input for subsequent typing
+      if (keyboardInput) keyboardInput.focus();
+    });
+
+    // ─── Mouse Move (throttled) ────────────────
+    let lastMoveTime = 0;
+    screen.addEventListener('mousemove', (e) => {
+      if (!this.isRecording) return;
+      const now = Date.now();
+      if (now - lastMoveTime < 100) return;
+      lastMoveTime = now;
+      const coords = this._getScaledCoords(e, screen);
+      WS.send({ type: 'remote_mousemove', x: coords.x, y: coords.y });
+    });
+
+    // ─── Mouse Scroll ──────────────────────────
+    wrapper.addEventListener('wheel', (e) => {
+      if (!this.isRecording) return;
+      e.preventDefault();
+      WS.send({ type: 'remote_scroll', deltaX: e.deltaX, deltaY: e.deltaY });
+    }, { passive: false });
+
+    // ─── Keyboard Input ────────────────────────
+    if (keyboardInput) {
+      keyboardInput.addEventListener('input', (e) => {
         if (!this.isRecording) return;
-        e.preventDefault();
-        const coords = this._getScaledCoords(e, screen);
-        WS.send({ type: 'remote_click', x: coords.x, y: coords.y });
-
-        // Show click ripple effect
-        this._showClickRipple(e, wrapper);
-
-        // Focus keyboard input for subsequent typing
-        if (keyboardInput) keyboardInput.focus();
-      });
-
-      // ─── Mouse Move (throttled) ────────────────
-      let lastMoveTime = 0;
-      screen.addEventListener('mousemove', (e) => {
-        if (!this.isRecording) return;
-        const now = Date.now();
-        if (now - lastMoveTime < 100) return; // Throttle to 10 moves/sec
-        lastMoveTime = now;
-        const coords = this._getScaledCoords(e, screen);
-        WS.send({ type: 'remote_mousemove', x: coords.x, y: coords.y });
-      });
-
-      // ─── Mouse Scroll ──────────────────────────
-      wrapper.addEventListener('wheel', (e) => {
-        if (!this.isRecording) return;
-        e.preventDefault();
-        WS.send({ type: 'remote_scroll', deltaX: e.deltaX, deltaY: e.deltaY });
-      }, { passive: false });
-
-      // ─── Keyboard Input ────────────────────────
-      // We use a hidden textarea to capture keyboard input
-      if (keyboardInput) {
-        keyboardInput.addEventListener('input', (e) => {
-          if (!this.isRecording) return;
-          const text = keyboardInput.value;
-          if (text) {
-            WS.send({ type: 'remote_type', text: text });
-            keyboardInput.value = ''; // Clear after sending
-          }
-        });
-
-        keyboardInput.addEventListener('keydown', (e) => {
-          if (!this.isRecording) return;
-          
-          // Special keys that should be sent as key presses
-          const specialKeys = ['Enter', 'Tab', 'Escape', 'Backspace', 'Delete',
-            'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight',
-            'Home', 'End', 'PageUp', 'PageDown'];
-          
-          if (specialKeys.includes(e.key)) {
-            e.preventDefault();
-            WS.send({ type: 'remote_key', key: e.key });
-          }
-        });
-      }
-
-      // When clicking the screen, focus keyboard input
-      screen.addEventListener('mousedown', () => {
-        if (keyboardInput) {
-          // Small delay to avoid interfering with click
-          setTimeout(() => keyboardInput.focus(), 50);
+        const text = keyboardInput.value;
+        if (text) {
+          WS.send({ type: 'remote_type', text: text });
+          keyboardInput.value = '';
         }
       });
 
-      // ─── URL Bar ───────────────────────────────
-      if (urlInput) {
-        urlInput.addEventListener('keydown', (e) => {
-          if (e.key === 'Enter') {
-            e.preventDefault();
-            this._navigateToUrl(urlInput.value.trim());
-          }
-        });
-      }
+      keyboardInput.addEventListener('keydown', (e) => {
+        if (!this.isRecording) return;
+        const specialKeys = ['Enter', 'Tab', 'Escape', 'Backspace', 'Delete',
+          'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight',
+          'Home', 'End', 'PageUp', 'PageDown'];
+        if (specialKeys.includes(e.key)) {
+          e.preventDefault();
+          WS.send({ type: 'remote_key', key: e.key });
+        }
+      });
+    }
 
-      if (urlGoBtn) {
-        urlGoBtn.addEventListener('click', () => {
-          const url = document.getElementById('remote-url-input')?.value?.trim();
-          if (url) this._navigateToUrl(url);
-        });
+    // When clicking the screen, focus keyboard input
+    screen.addEventListener('mousedown', () => {
+      if (keyboardInput) {
+        setTimeout(() => keyboardInput.focus(), 50);
       }
     });
+
+    // ─── URL Bar ───────────────────────────────
+    if (urlInput) {
+      urlInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          this._navigateToUrl(urlInput.value.trim());
+        }
+      });
+    }
+
+    if (urlGoBtn) {
+      urlGoBtn.addEventListener('click', () => {
+        const url = document.getElementById('remote-url-input')?.value?.trim();
+        if (url) this._navigateToUrl(url);
+      });
+    }
   },
 
   /**
