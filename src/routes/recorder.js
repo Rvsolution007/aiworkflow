@@ -75,5 +75,18 @@ router.get('/status', (req, res) => {
   res.json({ success: true, ...status });
 });
 
+/**
+ * POST /api/recorder/reset
+ * Force reset recorder (emergency cleanup for stuck sessions)
+ */
+router.post('/reset', async (req, res) => {
+  try {
+    const result = await recorder.forceReset();
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 module.exports = router;
 module.exports.setRecorderBroadcast = setRecorderBroadcast;

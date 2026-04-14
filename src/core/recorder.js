@@ -248,7 +248,7 @@ class Recorder {
     this.profileName = 'default';
     this.popupDismissInterval = null;
     this.screenStreamInterval = null;
-    this.screenStreamFPS = 3; // frames per second for screen streaming
+    this.screenStreamFPS = 4; // frames per second for screen streaming
     this._isStreaming = false;
   }
 
@@ -260,8 +260,24 @@ class Recorder {
    * @returns {object} { success, message }
    */
   async start(options = {}) {
+    // If already recording, force cleanup the old session first
     if (this.isRecording) {
-      return { success: false, message: 'Already recording' };
+      logger.warn('Previous recording session still active — force cleaning up...');
+      try {
+        this._stopScreenStream();
+        if (this.popupDismissInterval) {
+          clearInterval(this.popupDismissInterval);
+          this.popupDismissInterval = null;
+        }
+        if (this.browserManager) {
+          await this.browserManager.close().catch(() => {});
+        }
+      } catch (e) {}
+      this.browserManager = null;
+      this.page = null;
+      this.isRecording = false;
+      this.recordedSteps = [];
+      logger.info('Old recording session cleaned up');
     }
 
     this.profileName = options.profileName || 'default';
@@ -323,10 +339,6 @@ class Recorder {
    * @returns {object} { success, steps, stepCount }
    */
   async stop() {
-    if (!this.isRecording) {
-      return { success: false, message: 'Not recording', steps: [] };
-    }
-
     this.isRecording = false;
 
     // Stop screen streaming
@@ -340,12 +352,20 @@ class Recorder {
 
     // Save session cookies before closing
     if (this.page && this.browserManager?.isAlive()) {
-      await SessionManager.saveCookies(this.profileName, this.page);
+      try {
+        await SessionManager.saveCookies(this.profileName, this.page);
+      } catch (e) {
+        logger.warn('Failed to save cookies on stop', { error: e.message });
+      }
     }
 
     // Close browser
     if (this.browserManager) {
-      await this.browserManager.close();
+      try {
+        await this.browserManager.close();
+      } catch (e) {
+        logger.warn('Browser close failed on stop', { error: e.message });
+      }
       this.browserManager = null;
       this.page = null;
     }
@@ -361,23 +381,50 @@ class Recorder {
    * Discard recording without saving
    */
   async discard() {
+    // Stop everything
+    this._stopScreenStream();
+    
     if (this.popupDismissInterval) {
       clearInterval(this.popupDismissInterval);
       this.popupDismissInterval = null;
     }
 
-    this._stopScreenStream();
     this.isRecording = false;
     this.recordedSteps = [];
 
     if (this.browserManager) {
-      await this.browserManager.close();
+      try {
+        await this.browserManager.close();
+      } catch (e) {
+        logger.warn('Browser close failed on discard', { error: e.message });
+      }
       this.browserManager = null;
       this.page = null;
     }
 
-    logger.info('Recording discarded');
+    logger.info('Recording discarded and state fully reset');
     return { success: true, message: 'Recording discarded' };
+  }
+
+  /**
+   * Force reset everything (emergency cleanup)
+   */
+  async forceReset() {
+    this._stopScreenStream();
+    if (this.popupDismissInterval) {
+      clearInterval(this.popupDismissInterval);
+      this.popupDismissInterval = null;
+    }
+    this.isRecording = false;
+    this.recordedSteps = [];
+    this.lastEventTime = null;
+    if (this.browserManager) {
+      try { await this.browserManager.close(); } catch (e) {}
+      this.browserManager = null;
+      this.page = null;
+    }
+    logger.info('Recorder force reset complete');
+    return { success: true, message: 'Recorder reset' };
   }
 
   /**
@@ -494,7 +541,7 @@ class Recorder {
         const screenshot = await this.page.screenshot({
           encoding: 'base64',
           type: 'jpeg',
-          quality: 50, // Lower quality for faster streaming
+          quality: 70, // Good quality for clear viewing
           fullPage: false,
         });
 
