@@ -54,6 +54,14 @@ class BrowserManager {
       try {
         logger.info(`Launching browser (attempt ${attempt}/3)...`);
 
+        // Build environment for browser process
+        const browserEnv = { ...process.env };
+        // Ensure DISPLAY is set for Xvfb on Linux (recording mode)
+        if (process.platform === 'linux' && !isHeadless) {
+          browserEnv.DISPLAY = process.env.DISPLAY || ':99';
+          logger.info(`Recording mode on Linux — using DISPLAY=${browserEnv.DISPLAY}`);
+        }
+
         this.browser = await puppeteer.launch({
           executablePath,
           headless: isHeadless ? 'new' : false,
@@ -69,6 +77,7 @@ class BrowserManager {
           handleSIGINT: false,
           handleSIGTERM: false,
           handleSIGHUP: false,
+          env: browserEnv,
         });
 
         // Get the first page or create one

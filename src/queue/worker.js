@@ -159,10 +159,15 @@ async function startWorker() {
       duration: result?.duration,
     });
     // Notify scheduler for auto-repeat
-    if (result?.status === 'completed' && job?.data?.flow?.id) {
+    const flowId = job?.data?.flow?.id;
+    if (flowId) {
       try {
         const scheduler = require('../core/scheduler');
-        scheduler.onFlowCompleted(job.data.flow.id);
+        if (result?.status === 'completed') {
+          scheduler.onFlowCompleted(flowId);
+        } else {
+          scheduler.onFlowFailed(flowId);
+        }
       } catch (e) {}
     }
   });
@@ -172,6 +177,15 @@ async function startWorker() {
       error: err.message,
       stack: err.stack?.split('\n').slice(0, 5).join(' | '),
     });
+
+    // Notify scheduler that flow failed (pauses auto-repeat)
+    const flowId = job?.data?.flow?.id;
+    if (flowId) {
+      try {
+        const scheduler = require('../core/scheduler');
+        scheduler.onFlowFailed(flowId);
+      } catch (e) {}
+    }
 
     // Also broadcast failure to frontend with full error details
     if (job?.data?.executionId) {

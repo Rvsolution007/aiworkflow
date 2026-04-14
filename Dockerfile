@@ -35,6 +35,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     dumb-init \
     dbus \
     procps \
+    xvfb \
+    xauth \
     && rm -rf /var/lib/apt/lists/*
 
 # Set Chrome path for Puppeteer
@@ -46,6 +48,8 @@ ENV CHROME_CRASHPAD_PIPE_NAME=
 ENV CHROME_DEVEL_SANDBOX=
 # Disable dbus requirement for Chrome (avoids bus.cc errors)
 ENV DBUS_SESSION_BUS_ADDRESS=/dev/null
+# Virtual display for headful recording mode
+ENV DISPLAY=:99
 
 # Create app directories with proper permissions
 RUN mkdir -p /app/data/profiles /app/data/screenshots /app/data/logs /app/credentials /tmp/.chromium/crashes /run/dbus \
@@ -69,4 +73,5 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
   CMD node -e "fetch('http://localhost:3000/api/health').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"
 
 # Use dumb-init to handle signals properly
-CMD ["dumb-init", "node", "src/server.js"]
+# Start Xvfb virtual display + Node.js app
+CMD ["dumb-init", "bash", "-c", "Xvfb :99 -screen 0 1920x1080x24 -nolisten tcp -ac &  sleep 1 && node src/server.js"]

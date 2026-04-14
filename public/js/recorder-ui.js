@@ -330,40 +330,110 @@ const TimerUI = {
     const flow = App.flows.find(f => f.id == flowId);
     if (!flow) return;
 
+    const isEnabled = flow.timer_enabled ? true : false;
+    const currentInterval = flow.timer_interval_min || 30;
+
     App.showModal(`
-      <div class="modal-title">⏱️ Auto-Repeat Timer</div>
+      <div class="modal-title">⏱️ Auto-Execution Timer</div>
       <div class="modal-flow-name">${App._escapeHtml(flow.name)}</div>
-      <div class="input-group">
-        <label class="input-label">Repeat Interval (minutes)</label>
-        <input type="number" class="input" id="timer-interval" value="${flow.timer_interval_min || 40}" min="1" max="1440" placeholder="e.g., 40">
-        <div style="font-size:11px;color:var(--text-muted);margin-top:4px">
-          Flow will auto-run again after this many minutes from successful completion.
+      
+      <div class="timer-modal-section">
+        <div class="timer-enable-row">
+          <label class="timer-switch-label">
+            <span class="timer-switch-text">Auto-Repeat After Completion</span>
+            <div class="timer-switch">
+              <input type="checkbox" id="timer-enabled" ${isEnabled ? 'checked' : ''} onchange="TimerUI._toggleUI()">
+              <span class="timer-switch-slider"></span>
+            </div>
+          </label>
         </div>
       </div>
-      <div class="input-group">
-        <label class="input-label" style="display:flex;align-items:center;gap:10px">
-          <input type="checkbox" id="timer-enabled" ${flow.timer_enabled ? 'checked' : ''}>
-          <span>Enable Auto-Repeat</span>
-        </label>
+
+      <div id="timer-config-area" style="${isEnabled ? '' : 'opacity:0.4;pointer-events:none;'}">
+        <div class="timer-modal-section">
+          <label class="input-label">Repeat Interval</label>
+          <div class="timer-quick-btns">
+            <button class="btn btn-sm timer-quick-btn" onclick="TimerUI._setQuick(15)">15m</button>
+            <button class="btn btn-sm timer-quick-btn" onclick="TimerUI._setQuick(30)">30m</button>
+            <button class="btn btn-sm timer-quick-btn" onclick="TimerUI._setQuick(45)">45m</button>
+            <button class="btn btn-sm timer-quick-btn" onclick="TimerUI._setQuick(60)">1hr</button>
+            <button class="btn btn-sm timer-quick-btn" onclick="TimerUI._setQuick(120)">2hr</button>
+            <button class="btn btn-sm timer-quick-btn" onclick="TimerUI._setQuick(360)">6hr</button>
+          </div>
+          <div style="display:flex;align-items:center;gap:10px;margin-top:10px">
+            <input type="number" class="input" id="timer-interval" value="${currentInterval}" min="1" max="1440" style="flex:1">
+            <span style="color:var(--text-muted);font-size:13px">minutes</span>
+          </div>
+        </div>
+
+        <div class="timer-modal-info">
+          <div class="timer-info-icon">ℹ️</div>
+          <div class="timer-info-text">
+            <strong>How it works:</strong> When you run this flow and it completes successfully, the timer starts counting. After the interval, it auto-runs again. This loop continues until you turn it OFF.
+            <br><br>
+            <strong>Example:</strong> If interval is 30 min and flow completes at 9:30, next run starts at 10:00.
+            <br>If flow fails, the timer pauses until next manual run succeeds.
+          </div>
+        </div>
       </div>
-      <div id="timer-status" style="margin-top:10px;font-size:12px;color:var(--text-muted)"></div>
+
+      <div id="timer-status" style="margin-top:12px;font-size:12px;color:var(--text-muted)"></div>
       <div class="modal-actions">
         <button class="btn btn-secondary" onclick="App.closeModal()">Cancel</button>
         <button class="btn btn-primary" onclick="TimerUI.saveTimer(${flowId})">💾 Save Timer</button>
       </div>
     `);
 
+    // Highlight current interval
+    this._highlightQuickBtn(currentInterval);
+
     // Load current timer status
     try {
       const res = await fetch('/api/timers');
       const data = await res.json();
       const timer = data.timers?.find(t => t.flowId == flowId);
-      if (timer && timer.nextRun) {
-        const nextRunTime = new Date(timer.nextRun).toLocaleTimeString();
-        document.getElementById('timer-status').innerHTML = 
-          `<span style="color:var(--success)">⏱️ Next run at: <strong>${nextRunTime}</strong></span>`;
+      if (timer) {
+        if (timer.nextRun) {
+          const nextRunTime = new Date(timer.nextRun).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+          const remaining = new Date(timer.nextRun).getTime() - Date.now();
+          const mins = Math.floor(remaining / 60000);
+          const secs = Math.floor((remaining % 60000) / 1000);
+          document.getElementById('timer-status').innerHTML = 
+            `<span style="color:var(--success)">⏱️ Next execution at <strong>${nextRunTime}</strong> (in ${mins}m ${secs}s)</span>`;
+        } else if (timer.waitingForExecution) {
+          document.getElementById('timer-status').innerHTML = 
+            `<span style="color:var(--warning)">⏸ Timer active — waiting for first successful execution to start loop</span>`;
+        } else if (timer.running) {
+          document.getElementById('timer-status').innerHTML = 
+            `<span style="color:var(--info)">🔄 Currently executing...</span>`;
+        }
       }
     } catch (e) {}
+  },
+
+  _toggleUI() {
+    const enabled = document.getElementById('timer-enabled').checked;
+    const area = document.getElementById('timer-config-area');
+    if (area) {
+      area.style.opacity = enabled ? '1' : '0.4';
+      area.style.pointerEvents = enabled ? 'auto' : 'none';
+    }
+  },
+
+  _setQuick(minutes) {
+    const input = document.getElementById('timer-interval');
+    if (input) input.value = minutes;
+    this._highlightQuickBtn(minutes);
+  },
+
+  _highlightQuickBtn(minutes) {
+    document.querySelectorAll('.timer-quick-btn').forEach(btn => {
+      const btnMins = parseInt(btn.textContent) || (btn.textContent.includes('hr') ? parseInt(btn.textContent) * 60 : 0);
+      // Map button labels to minutes
+      const labelMap = { '15m': 15, '30m': 30, '45m': 45, '1hr': 60, '2hr': 120, '6hr': 360 };
+      const val = labelMap[btn.textContent] || 0;
+      btn.classList.toggle('active', val === minutes);
+    });
   },
 
   async saveTimer(flowId) {
@@ -384,12 +454,17 @@ const TimerUI = {
       const data = await res.json();
 
       if (data.success) {
-        App.toast(enabled ? `⏱️ Timer set: repeat every ${intervalMinutes} min` : 'Timer disabled', 'success');
+        App.toast(
+          enabled ? `⏱️ Auto-repeat set: every ${intervalMinutes} min after completion` : '⏱️ Auto-repeat disabled',
+          'success'
+        );
         App.closeModal();
         App.loadFlows();
+        App._loadTimerStatuses();
       }
     } catch (err) {
       App.toast(`Failed: ${err.message}`, 'error');
     }
   },
 };
+

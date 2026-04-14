@@ -86,6 +86,7 @@ setRecorderBroadcast(broadcast);
 // Setup scheduler
 const scheduler = require('./core/scheduler');
 const Execution = require('./models/Execution');
+scheduler.setWsBroadcast(broadcast);
 
 // ─── Start Server + Worker ─────────────────────────────
 

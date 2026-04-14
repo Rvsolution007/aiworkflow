@@ -35,6 +35,15 @@ const App = {
 
     // Initialize recorder UI
     RecorderUI.init();
+
+    // Listen for timer updates from server
+    WS.on('timer_update', (data) => this._handleTimerUpdate(data));
+
+    // Start countdown ticker (updates every second)
+    this._timerCountdownInterval = setInterval(() => this._tickTimerCountdowns(), 1000);
+
+    // Load initial timer statuses
+    this._loadTimerStatuses();
   },
 
   /**
@@ -173,6 +182,102 @@ const App = {
 
   // ─── Render Functions ─────────────────────────────
 
+  // Timer statuses cache
+  _timerStatuses: {},
+
+  async _loadTimerStatuses() {
+    try {
+      const res = await fetch('/api/timers');
+      const data = await res.json();
+      if (data.success && data.timers) {
+        data.timers.forEach(t => {
+          this._timerStatuses[t.flowId] = t;
+        });
+        // Re-render flows if on flows page
+        if (this.currentSection === 'flows') this._renderFlows();
+      }
+    } catch (e) {}
+  },
+
+  _handleTimerUpdate(data) {
+    if (!data.flowId) return;
+    this._timerStatuses[data.flowId] = data;
+    // Update the timer widget on the specific flow card
+    this._updateTimerWidget(data.flowId);
+  },
+
+  _tickTimerCountdowns() {
+    document.querySelectorAll('.flow-timer-countdown').forEach(el => {
+      const nextRun = el.dataset.nextRun;
+      if (!nextRun) return;
+      const remaining = new Date(nextRun).getTime() - Date.now();
+      if (remaining <= 0) {
+        el.textContent = '🔄 Running...';
+        el.classList.add('timer-running');
+      } else {
+        const mins = Math.floor(remaining / 60000);
+        const secs = Math.floor((remaining % 60000) / 1000);
+        el.textContent = `⏱ Next: ${mins}m ${secs}s`;
+        el.classList.remove('timer-running');
+      }
+    });
+  },
+
+  _updateTimerWidget(flowId) {
+    const widget = document.getElementById(`timer-widget-${flowId}`);
+    if (!widget) return;
+    const status = this._timerStatuses[flowId];
+    widget.innerHTML = this._buildTimerWidget(flowId, status);
+  },
+
+  _buildTimerWidget(flowId, timerStatus) {
+    const flow = this.flows.find(f => f.id == flowId);
+    const enabled = timerStatus?.enabled || flow?.timer_enabled;
+    const interval = timerStatus?.interval || flow?.timer_interval_min || 0;
+    const nextRun = timerStatus?.nextRun || null;
+    const running = timerStatus?.running || false;
+    const waiting = timerStatus?.waitingForExecution || false;
+
+    if (!enabled) {
+      return `
+        <div class="timer-widget-off" onclick="event.stopPropagation(); TimerUI.setTimer(${flowId})">
+          <div class="timer-toggle-label">🔁 Auto-Repeat</div>
+          <div class="timer-toggle-switch">
+            <span class="timer-off-text">OFF</span>
+          </div>
+        </div>
+      `;
+    }
+
+    let statusHtml = '';
+    if (running) {
+      statusHtml = '<div class="flow-timer-countdown timer-running">🔄 Executing...</div>';
+    } else if (nextRun) {
+      const remaining = new Date(nextRun).getTime() - Date.now();
+      const mins = Math.floor(remaining / 60000);
+      const secs = Math.floor((remaining % 60000) / 1000);
+      const nextTime = new Date(nextRun).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      statusHtml = `
+        <div class="flow-timer-countdown" data-next-run="${nextRun}">⏱ Next: ${mins}m ${secs}s</div>
+        <div class="flow-timer-next-time">🕐 at ${nextTime}</div>
+      `;
+    } else if (waiting) {
+      statusHtml = '<div class="flow-timer-countdown timer-waiting">⏸ Waiting for run...</div>';
+    }
+
+    return `
+      <div class="timer-widget-on" onclick="event.stopPropagation(); TimerUI.setTimer(${flowId})">
+        <div class="timer-widget-header">
+          <div class="timer-toggle-label">🔁 Auto: ${interval}min</div>
+          <div class="timer-toggle-switch active">
+            <span class="timer-on-text">ON</span>
+          </div>
+        </div>
+        ${statusHtml}
+      </div>
+    `;
+  },
+
   _renderFlows() {
     const grid = document.getElementById('flows-grid');
 
@@ -187,24 +292,30 @@ const App = {
       return;
     }
 
-    grid.innerHTML = this.flows.map(flow => `
-      <div class="flow-card" onclick="App.viewFlow(${flow.id})">
-        <div class="flow-card-actions">
-          <button class="btn btn-sm btn-primary" onclick="event.stopPropagation(); App.executeFlow(${flow.id})" title="Run">▶️</button>
-          <button class="btn btn-sm btn-secondary" onclick="event.stopPropagation(); TimerUI.setTimer(${flow.id})" title="Timer">⏱️</button>
-          <button class="btn btn-sm btn-danger" onclick="event.stopPropagation(); App.deleteFlow(${flow.id})" title="Delete">🗑️</button>
-        </div>
-        <div class="flow-card-name">${this._escapeHtml(flow.name)}</div>
-        <div class="flow-card-desc">${this._escapeHtml(flow.description || 'No description')}</div>
-        <div class="flow-card-meta">
-          <div class="flow-card-steps">⚡ ${flow.steps.length} steps</div>
-          <div class="flow-card-badges">
-            ${flow.timer_enabled ? '<span class="flow-timer-badge">⏱ ' + flow.timer_interval_min + 'min</span>' : ''}
-            <div class="flow-card-category">${flow.category || 'general'}</div>
+    grid.innerHTML = this.flows.map(flow => {
+      const timerStatus = this._timerStatuses[flow.id];
+      const timerWidgetHtml = this._buildTimerWidget(flow.id, timerStatus);
+
+      return `
+        <div class="flow-card" onclick="App.viewFlow(${flow.id})">
+          <div class="flow-card-top">
+            <div class="flow-card-actions">
+              <button class="btn btn-sm btn-primary" onclick="event.stopPropagation(); App.executeFlow(${flow.id})" title="Run">▶️</button>
+              <button class="btn btn-sm btn-danger" onclick="event.stopPropagation(); App.deleteFlow(${flow.id})" title="Delete">🗑️</button>
+            </div>
+            <div class="flow-card-name">${this._escapeHtml(flow.name)}</div>
+            <div class="flow-card-desc">${this._escapeHtml(flow.description || 'No description')}</div>
+            <div class="flow-card-meta">
+              <div class="flow-card-steps">⚡ ${flow.steps.length} steps</div>
+              <div class="flow-card-category">${flow.category || 'general'}</div>
+            </div>
+          </div>
+          <div class="flow-card-timer" id="timer-widget-${flow.id}">
+            ${timerWidgetHtml}
           </div>
         </div>
-      </div>
-    `).join('');
+      `;
+    }).join('');
   },
 
   _renderCredentials() {
