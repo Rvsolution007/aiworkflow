@@ -88,6 +88,15 @@ const WS = {
   },
 
   /**
+   * Send a message to the server
+   */
+  send(data) {
+    if (this.socket && this.socket.readyState === WebSocket.OPEN) {
+      this.socket.send(typeof data === 'string' ? data : JSON.stringify(data));
+    }
+  },
+
+  /**
    * Auto-reconnect with exponential backoff
    */
   _reconnect() {

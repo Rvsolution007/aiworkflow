@@ -1,13 +1,16 @@
 /**
- * AI Flow Builder — Recorder UI
+ * AI Flow Builder — Recorder UI (Remote Browser Viewer)
  * Frontend controls for Record & Replay mode.
- * Live step preview, step editing, and session management.
+ * Shows live browser screen from server and captures user interactions.
  */
 
 const RecorderUI = {
   isRecording: false,
   recordedSteps: [],
   selectedProfile: 'default',
+  _frameCount: 0,
+  _lastFpsUpdate: 0,
+  _receivedFirstFrame: false,
 
   /**
    * Initialize recorder UI
@@ -15,6 +18,11 @@ const RecorderUI = {
   init() {
     // Listen for recorder WebSocket events
     WS.on('recorder_event', (data) => this._handleRecorderEvent(data));
+    // Listen for screen frames from server
+    WS.on('screen_frame', (data) => this._handleScreenFrame(data));
+
+    // Setup remote browser viewer event handlers
+    this._setupRemoteViewerEvents();
   },
 
   /**
@@ -24,9 +32,14 @@ const RecorderUI = {
     const profileName = document.getElementById('recorder-profile-select')?.value || 'default';
     this.selectedProfile = profileName;
     this.recordedSteps = [];
+    this._receivedFirstFrame = false;
+    this._frameCount = 0;
 
     // Update UI to recording state
-    this._setRecordingUI(true, 'Starting browser...');
+    this._setRecordingUI(true, 'Starting browser on server...');
+
+    // Show remote browser viewer, hide instructions
+    this._showViewer(true);
 
     try {
       const res = await fetch('/api/recorder/start', {
@@ -38,15 +51,17 @@ const RecorderUI = {
 
       if (data.success) {
         this.isRecording = true;
-        this._setRecordingUI(true, 'Recording — Interact with the browser');
+        this._setRecordingUI(true, 'Recording — Use the viewer to interact');
         this._renderRecordedSteps();
-        App.toast('🔴 Recording started! Interact with the browser window.', 'success');
+        App.toast('🔴 Recording started! Interact using the Remote Browser Viewer.', 'success');
       } else {
         this._setRecordingUI(false);
+        this._showViewer(false);
         App.toast(`Failed: ${data.message || data.error}`, 'error');
       }
     } catch (err) {
       this._setRecordingUI(false);
+      this._showViewer(false);
       App.toast(`Error: ${err.message}`, 'error');
     }
   },
@@ -65,6 +80,7 @@ const RecorderUI = {
         this.isRecording = false;
         this.recordedSteps = data.steps || [];
         this._setRecordingUI(false);
+        this._showViewer(false);
         this._renderRecordedSteps();
         this._showEditMode();
         App.toast(`✅ Recording stopped! ${data.stepCount} steps captured.`, 'success');
@@ -89,6 +105,7 @@ const RecorderUI = {
       this.isRecording = false;
       this.recordedSteps = [];
       this._setRecordingUI(false);
+      this._showViewer(false);
       this._renderRecordedSteps();
       App.toast('Recording discarded', 'info');
     } catch (err) {
@@ -146,17 +163,11 @@ const RecorderUI = {
 
   // ─── Step Editing ───────────────────────────────
 
-  /**
-   * Remove a step
-   */
   removeStep(index) {
     this.recordedSteps.splice(index, 1);
     this._renderRecordedSteps();
   },
 
-  /**
-   * Move a step up
-   */
   moveStepUp(index) {
     if (index <= 0) return;
     const temp = this.recordedSteps[index];
@@ -165,15 +176,206 @@ const RecorderUI = {
     this._renderRecordedSteps();
   },
 
-  /**
-   * Move a step down
-   */
   moveStepDown(index) {
     if (index >= this.recordedSteps.length - 1) return;
     const temp = this.recordedSteps[index];
     this.recordedSteps[index] = this.recordedSteps[index + 1];
     this.recordedSteps[index + 1] = temp;
     this._renderRecordedSteps();
+  },
+
+  // ─── Remote Browser Viewer ─────────────────────
+
+  /**
+   * Setup mouse/keyboard event handlers on the remote browser viewer
+   */
+  _setupRemoteViewerEvents() {
+    // Wait for DOM to be ready
+    document.addEventListener('DOMContentLoaded', () => {
+      const screen = document.getElementById('remote-browser-screen');
+      const wrapper = document.getElementById('remote-browser-canvas-wrapper');
+      const urlInput = document.getElementById('remote-url-input');
+      const urlGoBtn = document.getElementById('url-go-btn');
+      const keyboardInput = document.getElementById('remote-keyboard-input');
+
+      if (!screen || !wrapper) return;
+
+      // ─── Mouse Click ───────────────────────────
+      screen.addEventListener('click', (e) => {
+        if (!this.isRecording) return;
+        e.preventDefault();
+        const coords = this._getScaledCoords(e, screen);
+        WS.send({ type: 'remote_click', x: coords.x, y: coords.y });
+
+        // Show click ripple effect
+        this._showClickRipple(e, wrapper);
+
+        // Focus keyboard input for subsequent typing
+        if (keyboardInput) keyboardInput.focus();
+      });
+
+      // ─── Mouse Move (throttled) ────────────────
+      let lastMoveTime = 0;
+      screen.addEventListener('mousemove', (e) => {
+        if (!this.isRecording) return;
+        const now = Date.now();
+        if (now - lastMoveTime < 100) return; // Throttle to 10 moves/sec
+        lastMoveTime = now;
+        const coords = this._getScaledCoords(e, screen);
+        WS.send({ type: 'remote_mousemove', x: coords.x, y: coords.y });
+      });
+
+      // ─── Mouse Scroll ──────────────────────────
+      wrapper.addEventListener('wheel', (e) => {
+        if (!this.isRecording) return;
+        e.preventDefault();
+        WS.send({ type: 'remote_scroll', deltaX: e.deltaX, deltaY: e.deltaY });
+      }, { passive: false });
+
+      // ─── Keyboard Input ────────────────────────
+      // We use a hidden textarea to capture keyboard input
+      if (keyboardInput) {
+        keyboardInput.addEventListener('input', (e) => {
+          if (!this.isRecording) return;
+          const text = keyboardInput.value;
+          if (text) {
+            WS.send({ type: 'remote_type', text: text });
+            keyboardInput.value = ''; // Clear after sending
+          }
+        });
+
+        keyboardInput.addEventListener('keydown', (e) => {
+          if (!this.isRecording) return;
+          
+          // Special keys that should be sent as key presses
+          const specialKeys = ['Enter', 'Tab', 'Escape', 'Backspace', 'Delete',
+            'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight',
+            'Home', 'End', 'PageUp', 'PageDown'];
+          
+          if (specialKeys.includes(e.key)) {
+            e.preventDefault();
+            WS.send({ type: 'remote_key', key: e.key });
+          }
+        });
+      }
+
+      // When clicking the screen, focus keyboard input
+      screen.addEventListener('mousedown', () => {
+        if (keyboardInput) {
+          // Small delay to avoid interfering with click
+          setTimeout(() => keyboardInput.focus(), 50);
+        }
+      });
+
+      // ─── URL Bar ───────────────────────────────
+      if (urlInput) {
+        urlInput.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter') {
+            e.preventDefault();
+            this._navigateToUrl(urlInput.value.trim());
+          }
+        });
+      }
+
+      if (urlGoBtn) {
+        urlGoBtn.addEventListener('click', () => {
+          const url = document.getElementById('remote-url-input')?.value?.trim();
+          if (url) this._navigateToUrl(url);
+        });
+      }
+    });
+  },
+
+  /**
+   * Navigate to URL via WebSocket
+   */
+  _navigateToUrl(url) {
+    if (!url || !this.isRecording) return;
+    WS.send({ type: 'remote_navigate', url });
+    App.toast(`Navigating to ${url}...`, 'info');
+  },
+
+  /**
+   * Get mouse coordinates scaled to the actual browser viewport
+   */
+  _getScaledCoords(event, imgElement) {
+    const rect = imgElement.getBoundingClientRect();
+    const scaleX = imgElement.naturalWidth / rect.width;
+    const scaleY = imgElement.naturalHeight / rect.height;
+    return {
+      x: Math.round((event.clientX - rect.left) * scaleX),
+      y: Math.round((event.clientY - rect.top) * scaleY),
+    };
+  },
+
+  /**
+   * Show click ripple animation at click position
+   */
+  _showClickRipple(event, container) {
+    const ripple = document.createElement('div');
+    ripple.className = 'click-ripple';
+    const rect = container.getBoundingClientRect();
+    ripple.style.left = (event.clientX - rect.left) + 'px';
+    ripple.style.top = (event.clientY - rect.top) + 'px';
+    container.appendChild(ripple);
+    setTimeout(() => ripple.remove(), 600);
+  },
+
+  /**
+   * Handle incoming screen frame from server
+   */
+  _handleScreenFrame(data) {
+    const screen = document.getElementById('remote-browser-screen');
+    const loading = document.getElementById('remote-browser-loading');
+    const urlInput = document.getElementById('remote-url-input');
+    const fpsEl = document.getElementById('remote-fps');
+
+    if (screen && data.frame) {
+      screen.src = 'data:image/jpeg;base64,' + data.frame;
+
+      // Hide loading on first frame
+      if (!this._receivedFirstFrame) {
+        this._receivedFirstFrame = true;
+        if (loading) loading.style.display = 'none';
+        screen.style.display = 'block';
+      }
+
+      // Update URL bar
+      if (urlInput && data.url) {
+        urlInput.value = data.url;
+      }
+
+      // FPS counter
+      this._frameCount++;
+      const now = Date.now();
+      if (now - this._lastFpsUpdate > 1000) {
+        const fps = this._frameCount;
+        this._frameCount = 0;
+        this._lastFpsUpdate = now;
+        if (fpsEl) fpsEl.textContent = `${fps} FPS`;
+      }
+    }
+  },
+
+  /**
+   * Show/hide the remote browser viewer
+   */
+  _showViewer(show) {
+    const viewer = document.getElementById('remote-browser-viewer');
+    const instructions = document.getElementById('recorder-instructions');
+    const loading = document.getElementById('remote-browser-loading');
+    const screen = document.getElementById('remote-browser-screen');
+
+    if (show) {
+      if (viewer) viewer.style.display = 'block';
+      if (instructions) instructions.style.display = 'none';
+      if (loading) loading.style.display = 'flex';
+      if (screen) screen.style.display = 'none';
+      this._receivedFirstFrame = false;
+    } else {
+      if (viewer) viewer.style.display = 'none';
+      if (instructions) instructions.style.display = 'block';
+    }
   },
 
   // ─── Private Methods ───────────────────────────
@@ -213,7 +415,10 @@ const RecorderUI = {
 
   _renderRecordedSteps() {
     const list = document.getElementById('recorder-steps-list');
+    const countEl = document.getElementById('recorder-step-count');
     if (!list) return;
+
+    if (countEl) countEl.textContent = `${this.recordedSteps.length} steps`;
 
     if (this.recordedSteps.length === 0) {
       list.innerHTML = `
@@ -428,8 +633,6 @@ const TimerUI = {
 
   _highlightQuickBtn(minutes) {
     document.querySelectorAll('.timer-quick-btn').forEach(btn => {
-      const btnMins = parseInt(btn.textContent) || (btn.textContent.includes('hr') ? parseInt(btn.textContent) * 60 : 0);
-      // Map button labels to minutes
       const labelMap = { '15m': 15, '30m': 30, '45m': 45, '1hr': 60, '2hr': 120, '6hr': 360 };
       const val = labelMap[btn.textContent] || 0;
       btn.classList.toggle('active', val === minutes);
@@ -467,4 +670,3 @@ const TimerUI = {
     }
   },
 };
-

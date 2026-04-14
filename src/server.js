@@ -44,6 +44,9 @@ app.get('*', (req, res) => {
 const wss = new WebSocketServer({ server, path: '/ws' });
 const clients = new Set();
 
+// Import recorder for remote browser control
+const recorder = require('./core/recorder');
+
 wss.on('connection', (ws) => {
   clients.add(ws);
   logger.info(`WebSocket client connected (total: ${clients.size})`);
@@ -56,6 +59,39 @@ wss.on('connection', (ws) => {
   ws.on('error', (err) => {
     logger.error('WebSocket error', { error: err.message });
     clients.delete(ws);
+  });
+
+  // Handle incoming messages from frontend (remote browser control)
+  ws.on('message', (rawData) => {
+    try {
+      const msg = JSON.parse(rawData.toString());
+
+      switch (msg.type) {
+        case 'remote_click':
+          recorder.handleRemoteClick(msg.x, msg.y);
+          break;
+        case 'remote_type':
+          recorder.handleRemoteType(msg.text);
+          break;
+        case 'remote_key':
+          recorder.handleRemoteKeyPress(msg.key);
+          break;
+        case 'remote_scroll':
+          recorder.handleRemoteScroll(msg.deltaX || 0, msg.deltaY || 0);
+          break;
+        case 'remote_navigate':
+          recorder.handleRemoteNavigate(msg.url);
+          break;
+        case 'remote_mousemove':
+          recorder.handleRemoteMouseMove(msg.x, msg.y);
+          break;
+        default:
+          // Ignore unknown messages
+          break;
+      }
+    } catch (err) {
+      // Not JSON or handler error — ignore
+    }
   });
 
   // Send welcome message

@@ -2486,3 +2486,204 @@ select.input {
   }
 }
 
+/* ─── Remote Browser Viewer ─────────────────────────── */
+#remote-browser-viewer {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-medium);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  box-shadow: var(--shadow-lg);
+  display: flex;
+  flex-direction: column;
+}
+
+.remote-browser-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  background: linear-gradient(180deg, #f3f4f6 0%, #e9ecef 100%);
+  border-bottom: 1px solid var(--border-medium);
+}
+
+.remote-browser-dots {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.remote-browser-dots .dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+}
+
+.remote-browser-dots .dot.red { background: #ef4444; }
+.remote-browser-dots .dot.yellow { background: #f59e0b; }
+.remote-browser-dots .dot.green { background: #10b981; }
+
+.remote-browser-url-bar {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: #ffffff;
+  border: 1px solid var(--border-subtle);
+  border-radius: 20px;
+  padding: 4px 10px;
+  box-shadow: inset 0 1px 3px rgba(0,0,0,0.04);
+}
+
+.url-icon {
+  font-size: 12px;
+  flex-shrink: 0;
+}
+
+.remote-url-input {
+  flex: 1;
+  border: none;
+  outline: none;
+  background: transparent;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px;
+  color: var(--text-secondary);
+  padding: 4px 0;
+}
+
+.remote-url-input:focus {
+  color: var(--text-primary);
+}
+
+.url-go-btn {
+  width: 26px;
+  height: 26px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 50%;
+  background: var(--accent-gradient);
+  color: white;
+  font-size: 14px;
+  font-weight: bold;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  flex-shrink: 0;
+}
+
+.url-go-btn:hover {
+  transform: scale(1.1);
+  box-shadow: var(--accent-glow);
+}
+
+.remote-browser-canvas-wrapper {
+  position: relative;
+  width: 100%;
+  min-height: 350px;
+  max-height: calc(100vh - 320px);
+  background: #1a1a2e;
+  overflow: hidden;
+  cursor: crosshair;
+}
+
+.remote-browser-screen {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: none;
+  user-select: none;
+  -webkit-user-drag: none;
+}
+
+.remote-browser-loading {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  color: rgba(255,255,255,0.7);
+  font-size: 14px;
+  font-weight: 500;
+  background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+}
+
+.remote-loading-sub {
+  font-size: 12px;
+  color: rgba(255,255,255,0.4);
+}
+
+.remote-loading-spinner {
+  width: 40px;
+  height: 40px;
+  border: 3px solid rgba(255,255,255,0.1);
+  border-top-color: var(--accent-primary);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.remote-browser-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 14px;
+  background: linear-gradient(180deg, #e9ecef 0%, #f3f4f6 100%);
+  border-top: 1px solid var(--border-subtle);
+  font-size: 12px;
+}
+
+.remote-status {
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+
+.remote-fps {
+  color: var(--text-muted);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+}
+
+/* Hidden keyboard capture textarea */
+.remote-keyboard-capture {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  border: none;
+  outline: none;
+  resize: none;
+  overflow: hidden;
+  z-index: -1;
+}
+
+/* Click ripple effect */
+.click-ripple {
+  position: absolute;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: rgba(14, 165, 233, 0.4);
+  border: 2px solid rgba(14, 165, 233, 0.8);
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  animation: rippleOut 0.6s ease-out forwards;
+  z-index: 100;
+}
+
+@keyframes rippleOut {
+  0% {
+    transform: translate(-50%, -50%) scale(0.3);
+    opacity: 1;
+  }
+  100% {
+    transform: translate(-50%, -50%) scale(2);
+    opacity: 0;
+  }
+}

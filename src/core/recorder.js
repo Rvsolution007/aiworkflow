@@ -1,6 +1,7 @@
 /**
- * AI Flow Builder — Flow Recorder
- * Opens a real browser and records user actions (clicks, typing, navigation).
+ * AI Flow Builder — Flow Recorder (Remote Browser Mode)
+ * Opens browser on server, streams screenshots to frontend,
+ * and accepts remote mouse/keyboard input via WebSocket.
  * Produces structured flow steps that can be replayed.
  */
 
@@ -26,7 +27,7 @@ const RECORDING_SCRIPT = `
     for (const attr of ['data-testid', 'data-id', 'name', 'aria-label', 'placeholder', 'role']) {
       const val = el.getAttribute(attr);
       if (val) {
-        const sel = el.tagName.toLowerCase() + '[' + attr + '="' + val.replace(/"/g, '\\\\"') + '"]';
+        const sel = el.tagName.toLowerCase() + '[' + attr + '="' + val.replace(/"/g, '\\\\\\"') + '"]';
         if (document.querySelectorAll(sel).length === 1) return sel;
       }
     }
@@ -246,6 +247,9 @@ class Recorder {
     this.onEvent = null; // WebSocket broadcast callback
     this.profileName = 'default';
     this.popupDismissInterval = null;
+    this.screenStreamInterval = null;
+    this.screenStreamFPS = 3; // frames per second for screen streaming
+    this._isStreaming = false;
   }
 
   /**
@@ -266,11 +270,11 @@ class Recorder {
     this.lastEventTime = null;
 
     try {
-      // Launch browser in headful (visible) mode
+      // Launch browser — headful on server (uses Xvfb), headful locally
       this.browserManager = new BrowserManager();
       const { page } = await this.browserManager.launch({
         profileName: this.profileName,
-        headless: false, // HEADFUL — user can see and interact
+        headless: false, // HEADFUL — renders to Xvfb on server
       });
       this.page = page;
 
@@ -301,10 +305,13 @@ class Recorder {
       // Start popup auto-dismiss background watcher
       this._startPopupWatcher();
 
+      // Start screen streaming to frontend
+      this._startScreenStream();
+
       this.isRecording = true;
 
       logger.info(`Recording started for profile: ${this.profileName}`);
-      return { success: true, message: 'Recording started. Interact with the browser.' };
+      return { success: true, message: 'Recording started. Use the Remote Browser Viewer to interact.' };
     } catch (err) {
       logger.error('Failed to start recording', { error: err.message });
       return { success: false, message: `Failed to start: ${err.message}` };
@@ -321,6 +328,9 @@ class Recorder {
     }
 
     this.isRecording = false;
+
+    // Stop screen streaming
+    this._stopScreenStream();
 
     // Stop popup watcher
     if (this.popupDismissInterval) {
@@ -356,6 +366,7 @@ class Recorder {
       this.popupDismissInterval = null;
     }
 
+    this._stopScreenStream();
     this.isRecording = false;
     this.recordedSteps = [];
 
@@ -379,6 +390,147 @@ class Recorder {
       profileName: this.profileName,
       steps: this._convertToFlowSteps(),
     };
+  }
+
+  // ─── Remote Input Handlers ─────────────────────
+
+  /**
+   * Handle remote click from frontend browser viewer
+   */
+  async handleRemoteClick(x, y) {
+    if (!this.isRecording || !this.page || !this.browserManager?.isAlive()) return;
+    try {
+      await this.page.mouse.click(x, y);
+      logger.debug(`Remote click at (${x}, ${y})`);
+    } catch (err) {
+      logger.warn(`Remote click failed: ${err.message}`);
+    }
+  }
+
+  /**
+   * Handle remote typing from frontend
+   */
+  async handleRemoteType(text) {
+    if (!this.isRecording || !this.page || !this.browserManager?.isAlive()) return;
+    try {
+      await this.page.keyboard.type(text, { delay: 30 });
+      logger.debug(`Remote type: "${text.substring(0, 20)}..."`);
+    } catch (err) {
+      logger.warn(`Remote type failed: ${err.message}`);
+    }
+  }
+
+  /**
+   * Handle remote key press from frontend
+   */
+  async handleRemoteKeyPress(key) {
+    if (!this.isRecording || !this.page || !this.browserManager?.isAlive()) return;
+    try {
+      await this.page.keyboard.press(key);
+      logger.debug(`Remote key press: ${key}`);
+    } catch (err) {
+      logger.warn(`Remote key press failed: ${err.message}`);
+    }
+  }
+
+  /**
+   * Handle remote scroll from frontend
+   */
+  async handleRemoteScroll(deltaX, deltaY) {
+    if (!this.isRecording || !this.page || !this.browserManager?.isAlive()) return;
+    try {
+      await this.page.mouse.wheel({ deltaX, deltaY });
+      logger.debug(`Remote scroll: (${deltaX}, ${deltaY})`);
+    } catch (err) {
+      logger.warn(`Remote scroll failed: ${err.message}`);
+    }
+  }
+
+  /**
+   * Handle remote URL navigation from frontend
+   */
+  async handleRemoteNavigate(url) {
+    if (!this.isRecording || !this.page || !this.browserManager?.isAlive()) return;
+    try {
+      // Ensure URL has protocol
+      if (!url.startsWith('http://') && !url.startsWith('https://')) {
+        url = 'https://' + url;
+      }
+      await this.page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
+      logger.debug(`Remote navigate to: ${url}`);
+    } catch (err) {
+      logger.warn(`Remote navigate failed: ${err.message}`);
+    }
+  }
+
+  /**
+   * Handle remote mouse move from frontend (for hover effects)
+   */
+  async handleRemoteMouseMove(x, y) {
+    if (!this.isRecording || !this.page || !this.browserManager?.isAlive()) return;
+    try {
+      await this.page.mouse.move(x, y);
+    } catch (err) {
+      // Ignore — mouse move errors are non-critical
+    }
+  }
+
+  // ─── Screen Streaming ──────────────────────────
+
+  /**
+   * Start streaming browser screenshots to frontend via WebSocket
+   */
+  _startScreenStream() {
+    if (this._isStreaming) return;
+    this._isStreaming = true;
+
+    const interval = Math.round(1000 / this.screenStreamFPS);
+
+    this.screenStreamInterval = setInterval(async () => {
+      if (!this.isRecording || !this.page || !this.browserManager?.isAlive()) return;
+
+      try {
+        // Capture screenshot as base64 JPEG (smaller than PNG)
+        const screenshot = await this.page.screenshot({
+          encoding: 'base64',
+          type: 'jpeg',
+          quality: 50, // Lower quality for faster streaming
+          fullPage: false,
+        });
+
+        // Get current URL for the address bar
+        let currentUrl = '';
+        try {
+          currentUrl = await this.page.url();
+        } catch (e) {}
+
+        // Broadcast frame to frontend
+        if (this.onEvent) {
+          this.onEvent({
+            type: 'screen_frame',
+            frame: screenshot,
+            url: currentUrl,
+            timestamp: Date.now(),
+          });
+        }
+      } catch (err) {
+        // Page might be navigating, skip this frame
+      }
+    }, interval);
+
+    logger.info(`Screen streaming started at ${this.screenStreamFPS} FPS`);
+  }
+
+  /**
+   * Stop screen streaming
+   */
+  _stopScreenStream() {
+    if (this.screenStreamInterval) {
+      clearInterval(this.screenStreamInterval);
+      this.screenStreamInterval = null;
+    }
+    this._isStreaming = false;
+    logger.info('Screen streaming stopped');
   }
 
   // ─── Private Methods ────────────────────────────

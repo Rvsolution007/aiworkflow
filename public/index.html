@@ -209,26 +209,63 @@
               </div>
             </div>
 
-            <!-- Instructions Panel -->
-            <div class="recorder-info-panel">
-              <div class="recorder-info-card">
-                <h3>📋 How it works</h3>
-                <ol class="recorder-steps-guide">
-                  <li><strong>Select Profile</strong> — Choose which browser session to use</li>
-                  <li><strong>Click Record</strong> — A Chrome browser window will open</li>
-                  <li><strong>Do your task</strong> — Navigate, click, type — all recorded automatically</li>
-                  <li><strong>Popups auto-dismissed</strong> — They won't be recorded as steps</li>
-                  <li><strong>Stop Recording</strong> — Edit/remove unwanted steps</li>
-                  <li><strong>Save as Flow</strong> — Run this flow anytime, it replays exactly!</li>
-                </ol>
+            <!-- Remote Browser Viewer Panel -->
+            <div class="recorder-info-panel" id="recorder-viewer-panel">
+              <!-- Instructions (shown when NOT recording) -->
+              <div id="recorder-instructions">
+                <div class="recorder-info-card">
+                  <h3>📋 How it works</h3>
+                  <ol class="recorder-steps-guide">
+                    <li><strong>Select Profile</strong> — Choose which browser session to use</li>
+                    <li><strong>Click Record</strong> — A remote browser window opens in the viewer below</li>
+                    <li><strong>Do your task</strong> — Click, type, navigate inside the viewer — all recorded automatically</li>
+                    <li><strong>Popups auto-dismissed</strong> — They won't be recorded as steps</li>
+                    <li><strong>Stop Recording</strong> — Edit/remove unwanted steps</li>
+                    <li><strong>Save as Flow</strong> — Run this flow anytime, it replays exactly!</li>
+                  </ol>
+                </div>
+                <div class="recorder-info-card">
+                  <h3>🍪 Session Persistence</h3>
+                  <p>Login once during recording — your session cookies are saved. Next time the flow runs, it <strong>skips login automatically</strong>!</p>
+                </div>
+                <div class="recorder-info-card">
+                  <h3>👥 Multiple Accounts</h3>
+                  <p>Use different profiles for different accounts. Each profile has its own saved session.</p>
+                </div>
               </div>
-              <div class="recorder-info-card">
-                <h3>🍪 Session Persistence</h3>
-                <p>Login once during recording — your session cookies are saved. Next time the flow runs, it <strong>skips login automatically</strong>!</p>
-              </div>
-              <div class="recorder-info-card">
-                <h3>👥 Multiple Accounts</h3>
-                <p>Use different profiles for different accounts. Each profile has its own saved session.</p>
+
+              <!-- Remote Browser Viewer (shown when RECORDING) -->
+              <div id="remote-browser-viewer" style="display:none">
+                <div class="remote-browser-header">
+                  <div class="remote-browser-dots">
+                    <span class="dot red"></span>
+                    <span class="dot yellow"></span>
+                    <span class="dot green"></span>
+                  </div>
+                  <div class="remote-browser-url-bar">
+                    <span class="url-icon">🔒</span>
+                    <input type="text" class="remote-url-input" id="remote-url-input" 
+                           placeholder="Enter URL and press Enter..." 
+                           spellcheck="false" autocomplete="off">
+                    <button class="url-go-btn" id="url-go-btn" title="Navigate">→</button>
+                  </div>
+                </div>
+                <div class="remote-browser-canvas-wrapper" id="remote-browser-canvas-wrapper">
+                  <img id="remote-browser-screen" class="remote-browser-screen" 
+                       alt="Remote Browser" draggable="false">
+                  <div class="remote-browser-loading" id="remote-browser-loading">
+                    <div class="remote-loading-spinner"></div>
+                    <div>Connecting to remote browser...</div>
+                    <div class="remote-loading-sub">Browser is starting on the server</div>
+                  </div>
+                  <!-- Keyboard input overlay (invisible, captures keyboard events) -->
+                  <textarea id="remote-keyboard-input" class="remote-keyboard-capture" 
+                            autocomplete="off" spellcheck="false" tabindex="-1"></textarea>
+                </div>
+                <div class="remote-browser-footer">
+                  <span class="remote-status" id="remote-status">🔴 Live — Click and type in the viewer</span>
+                  <span class="remote-fps" id="remote-fps"></span>
+                </div>
               </div>
             </div>
           </div>
