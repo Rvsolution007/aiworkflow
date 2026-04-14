@@ -321,6 +321,23 @@ class Recorder {
       // Start popup auto-dismiss background watcher
       this._startPopupWatcher();
 
+      // Navigate to start URL if provided
+      const startUrl = options.startUrl || '';
+      if (startUrl) {
+        let url = startUrl;
+        if (!url.startsWith('http://') && !url.startsWith('https://')) {
+          url = 'https://' + url;
+        }
+        logger.info(`Navigating to start URL: ${url}`);
+        try {
+          await this.page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
+          logger.info('Start URL loaded successfully');
+        } catch (navErr) {
+          logger.warn(`Start URL navigation issue: ${navErr.message}`);
+          // Continue anyway — page might still be usable
+        }
+      }
+
       // Start screen streaming to frontend
       this._startScreenStream();
 

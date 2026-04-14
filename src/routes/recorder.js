@@ -18,10 +18,11 @@ function setRecorderBroadcast(fn) { wsBroadcast = fn; }
  */
 router.post('/start', async (req, res) => {
   try {
-    const { profileName = 'default' } = req.body;
+    const { profileName = 'default', startUrl = '' } = req.body;
 
     const result = await recorder.start({
       profileName,
+      startUrl,
       onEvent: (data) => {
         wsBroadcast(JSON.stringify(data));
       },

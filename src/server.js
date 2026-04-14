@@ -90,7 +90,7 @@ wss.on('connection', (ws) => {
           break;
       }
     } catch (err) {
-      // Not JSON or handler error — ignore
+      logger.warn('WebSocket message handler error', { error: err.message });
     }
   });
 

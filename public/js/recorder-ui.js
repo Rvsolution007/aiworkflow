@@ -30,6 +30,7 @@ const RecorderUI = {
    */
   async startRecording() {
     const profileName = document.getElementById('recorder-profile-select')?.value || 'default';
+    const startUrl = document.getElementById('recorder-start-url')?.value?.trim() || '';
     this.selectedProfile = profileName;
     this.recordedSteps = [];
     this._receivedFirstFrame = false;
@@ -45,7 +46,7 @@ const RecorderUI = {
       const res = await fetch('/api/recorder/start', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ profileName }),
+        body: JSON.stringify({ profileName, startUrl }),
       });
       const data = await res.json();
 
