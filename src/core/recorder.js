@@ -546,8 +546,48 @@ class Recorder {
           return {
             selector: getCssSelector(el),
             tag: el.tagName,
-            text: (el.textContent || '').trim().substring(0, 80),
+            text: getElementLabel(el),
           };
+
+          // Get the best human-readable label for an element
+          function getElementLabel(el) {
+            // Walk up to find nearest interactive element (button, a, input, etc.)
+            let target = el;
+            const interactiveTags = ['BUTTON', 'A', 'INPUT', 'SELECT', 'TEXTAREA', 'LABEL'];
+            for (let i = 0; i < 5 && target; i++) {
+              if (interactiveTags.includes(target.tagName)) break;
+              if (target.getAttribute('role') === 'button' || target.getAttribute('role') === 'link') break;
+              if (target.onclick || target.getAttribute('data-action')) break;
+              target = target.parentElement || target;
+              if (target === document.body) { target = el; break; }
+            }
+
+            // Priority order for getting label
+            const label = 
+              target.getAttribute('aria-label') ||
+              target.getAttribute('title') ||
+              target.getAttribute('alt') ||
+              target.getAttribute('placeholder') ||
+              target.getAttribute('value') ||
+              target.getAttribute('name') ||
+              '';
+            if (label) return label.trim().substring(0, 60);
+
+            // Get direct text (not deeply nested text)
+            const directText = Array.from(target.childNodes)
+              .filter(n => n.nodeType === 3) // Text nodes only
+              .map(n => n.textContent.trim())
+              .filter(t => t.length > 0)
+              .join(' ');
+            if (directText) return directText.substring(0, 60);
+
+            // Fallback: full textContent trimmed
+            const fullText = (target.textContent || '').trim();
+            if (fullText && fullText.length <= 60) return fullText;
+            if (fullText) return fullText.substring(0, 57) + '...';
+
+            return '';
+          }
         }, x, y);
 
         // Race with 2s timeout — if page is navigating, don't hang
@@ -1046,16 +1086,23 @@ class Recorder {
           params: { url: event.url },
         };
 
-      case 'click':
+      case 'click': {
+        // Prefer human-readable text label over CSS selector
+        const clickLabel = event.text || event.selector || `coords(${event.x},${event.y})`;
+        const clickSelector = event.text 
+          ? `text=${event.text}` 
+          : (event.selector || `coords(${event.x},${event.y})`);
         return {
           action: 'click',
-          description: `Click "${event.text || event.selector}"`,
+          description: `Click "${clickLabel}"`,
           params: {
-            selector: event.text ? `text=${event.text}` : event.selector,
+            selector: clickSelector,
             xpath: event.xpath,
             coordinates: { x: event.x, y: event.y },
+            text: event.text || '',
           },
         };
+      }
 
       case 'type':
         return {
