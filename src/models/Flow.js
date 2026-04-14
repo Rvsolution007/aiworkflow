@@ -9,12 +9,12 @@ const Flow = {
   /**
    * Create a new flow
    */
-  create({ name, description = '', steps = [], category = 'general' }) {
+  create({ name, description = '', steps = [], category = 'general', profileName = 'default' }) {
     const stmt = db.prepare(`
-      INSERT INTO flows (name, description, steps, category)
-      VALUES (?, ?, ?, ?)
+      INSERT INTO flows (name, description, steps, category, profile_name)
+      VALUES (?, ?, ?, ?, ?)
     `);
-    const result = stmt.run(name, description, JSON.stringify(steps), category);
+    const result = stmt.run(name, description, JSON.stringify(steps), category, profileName);
     return this.findById(result.lastInsertRowid);
   },
 
@@ -23,7 +23,10 @@ const Flow = {
    */
   findById(id) {
     const row = db.prepare('SELECT * FROM flows WHERE id = ?').get(id);
-    if (row) row.steps = JSON.parse(row.steps);
+    if (row) {
+      row.steps = JSON.parse(row.steps);
+      row.profileName = row.profile_name || 'default';
+    }
     return row || null;
   },
 
@@ -37,7 +40,7 @@ const Flow = {
     } else {
       rows = db.prepare('SELECT * FROM flows ORDER BY updated_at DESC').all();
     }
-    return rows.map(row => ({ ...row, steps: JSON.parse(row.steps) }));
+    return rows.map(row => ({ ...row, steps: JSON.parse(row.steps), profileName: row.profile_name || 'default' }));
   },
 
   /**

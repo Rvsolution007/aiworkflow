@@ -47,15 +47,15 @@ class FlowExecutor {
     this._emit('status', { status: 'running', message: 'Launching browser...' });
 
     try {
-      // 1. Launch anti-detect browser
+      // 1. Launch anti-detect browser (headless on server)
       const profileName = flow.profileName || `flow_${flow.id || 'temp'}`;
-      const { page } = await this.browserManager.launch({ profileName });
+      const { page } = await this.browserManager.launch({ profileName, headless: true });
 
       // 1.5. Load saved session cookies (enables login-free replays)
       const SessionManager = require('./session-manager');
       const hadSession = await SessionManager.loadCookies(profileName, page);
       if (hadSession) {
-        logger.info('Loaded saved session cookies — login may be skipped');
+        logger.info(`Loaded saved session cookies for profile: ${profileName}`);
       }
 
       // 2. Initialize human behavior engine
@@ -300,9 +300,7 @@ class FlowExecutor {
     // Handle Google redirects (account chooser, already logged in, etc.)
     const currentUrl = page.url();
     if (currentUrl.includes('accounts.google.com')) {
-      // Check if it's a "Choose an account" page (has existing accounts listed)
       const hasAccountList = await page.evaluate(() => {
-        // Check for multiple account entries or chooser-specific elements
         const accountItems = document.querySelectorAll(
           '[data-identifier], [data-email], .JDAKTe, ul li[role="link"]'
         );
@@ -320,6 +318,13 @@ class FlowExecutor {
 
     // Dismiss any popup overlays
     await this._dismissOverlayPopups(page);
+
+    // Save cookies after each navigate step (incremental session persistence)
+    try {
+      const SessionManager = require('./session-manager');
+      const profileName = this.browserManager?.profileName || 'default';
+      await SessionManager.saveCookies(profileName, page);
+    } catch (e) {}
 
     if (this.human) await this.human.warmUp();
   }

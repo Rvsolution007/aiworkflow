@@ -2692,3 +2692,134 @@ select.input {
     opacity: 0;
   }
 }
+
+/* ─── Fullscreen Button ───────────────────── */
+
+.remote-fullscreen-btn {
+  background: rgba(255,255,255,0.1);
+  border: 1px solid rgba(255,255,255,0.2);
+  color: #fff;
+  font-size: 18px;
+  width: 32px;
+  height: 32px;
+  border-radius: 6px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+  flex-shrink: 0;
+  margin-left: 4px;
+}
+
+.remote-fullscreen-btn:hover {
+  background: rgba(255,255,255,0.2);
+  transform: scale(1.1);
+}
+
+/* Fullscreen mode */
+#remote-browser-viewer:fullscreen,
+#remote-browser-viewer:-webkit-full-screen {
+  background: #0a0a1a;
+  display: flex;
+  flex-direction: column;
+}
+
+#remote-browser-viewer:fullscreen .remote-browser-canvas-wrapper,
+#remote-browser-viewer:-webkit-full-screen .remote-browser-canvas-wrapper {
+  flex: 1;
+  max-height: none;
+  min-height: 0;
+}
+
+#remote-browser-viewer:fullscreen .remote-browser-screen,
+#remote-browser-viewer:-webkit-full-screen .remote-browser-screen {
+  max-height: calc(100vh - 100px);
+}
+
+/* ─── Step Approval Banner ────────────────── */
+
+.step-approval-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+  border: 1px solid var(--accent-blue);
+  border-radius: 0 0 8px 8px;
+  padding: 10px 16px;
+  gap: 12px;
+  box-shadow: 0 4px 12px rgba(14,165,233,0.15);
+}
+
+.step-approval-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+}
+
+.step-approval-icon {
+  font-size: 20px;
+  flex-shrink: 0;
+}
+
+.step-approval-text {
+  font-size: 13px;
+  color: #e2e8f0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-family: 'Courier New', monospace;
+}
+
+.step-approval-actions {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.btn-approve, .btn-reject {
+  padding: 6px 14px;
+  border: none;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-approve {
+  background: linear-gradient(135deg, #10b981, #059669);
+  color: #fff;
+}
+
+.btn-approve:hover {
+  transform: scale(1.05);
+  box-shadow: 0 0 12px rgba(16,185,129,0.4);
+}
+
+.btn-reject {
+  background: linear-gradient(135deg, #ef4444, #dc2626);
+  color: #fff;
+}
+
+.btn-reject:hover {
+  transform: scale(1.05);
+  box-shadow: 0 0 12px rgba(239,68,68,0.4);
+}
+
+.step-approval-animate {
+  animation: slideInBanner 0.3s ease-out;
+}
+
+@keyframes slideInBanner {
+  from {
+    transform: translateY(10px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}

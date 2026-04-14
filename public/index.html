@@ -264,6 +264,8 @@
                            spellcheck="false" autocomplete="off">
                     <button class="url-go-btn" id="url-go-btn" title="Navigate">→</button>
                   </div>
+                  <button class="remote-fullscreen-btn" id="remote-fullscreen-btn" 
+                          onclick="RecorderUI.toggleFullscreen()" title="Toggle Fullscreen">⛶</button>
                 </div>
                 <div class="remote-browser-canvas-wrapper" id="remote-browser-canvas-wrapper">
                   <img id="remote-browser-screen" class="remote-browser-screen" 
@@ -276,6 +278,17 @@
                   <!-- Keyboard input overlay (invisible, captures keyboard events) -->
                   <textarea id="remote-keyboard-input" class="remote-keyboard-capture" 
                             autocomplete="off" spellcheck="false" tabindex="-1"></textarea>
+                </div>
+                <!-- Step Approval Banner -->
+                <div class="step-approval-banner" id="step-approval-banner" style="display:none">
+                  <div class="step-approval-info">
+                    <span class="step-approval-icon">📋</span>
+                    <span class="step-approval-text" id="step-approval-text">New step detected...</span>
+                  </div>
+                  <div class="step-approval-actions">
+                    <button class="btn-approve" id="step-approve-btn" onclick="RecorderUI.approveStep()">✅ Accept</button>
+                    <button class="btn-reject" id="step-reject-btn" onclick="RecorderUI.rejectStep()">❌ Reject</button>
+                  </div>
                 </div>
                 <div class="remote-browser-footer">
                   <span class="remote-status" id="remote-status">🔴 Live — Click and type in the viewer</span>

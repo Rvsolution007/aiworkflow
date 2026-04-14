@@ -464,8 +464,66 @@ class Recorder {
   async handleRemoteClick(x, y) {
     if (!this.isRecording || !this.page || !this.browserManager?.isAlive()) return;
     try {
+      // Get element info BEFORE clicking (for selector capture)
+      let elementInfo = {};
+      try {
+        elementInfo = await this.page.evaluate((cx, cy) => {
+          const el = document.elementFromPoint(cx, cy);
+          if (!el) return {};
+
+          function getCssSelector(el) {
+            if (!el || el === document.body) return 'body';
+            if (el.id) return '#' + CSS.escape(el.id);
+            for (const attr of ['data-testid', 'name', 'aria-label', 'placeholder', 'role']) {
+              const val = el.getAttribute(attr);
+              if (val) {
+                const sel = el.tagName.toLowerCase() + '[' + attr + '="' + val.replace(/"/g, '\\"') + '"]';
+                if (document.querySelectorAll(sel).length === 1) return sel;
+              }
+            }
+            let path = [];
+            let current = el;
+            while (current && current !== document.body) {
+              let s = current.tagName.toLowerCase();
+              if (current.id) { path.unshift('#' + CSS.escape(current.id)); break; }
+              const parent = current.parentElement;
+              if (parent) {
+                const siblings = Array.from(parent.children).filter(c => c.tagName === current.tagName);
+                if (siblings.length > 1) s += ':nth-of-type(' + (siblings.indexOf(current) + 1) + ')';
+              }
+              path.unshift(s);
+              current = current.parentElement;
+            }
+            return path.join(' > ');
+          }
+
+          return {
+            selector: getCssSelector(el),
+            tag: el.tagName,
+            text: (el.textContent || '').trim().substring(0, 80),
+            href: el.href || '',
+          };
+        }, x, y);
+      } catch (e) {
+        logger.debug('Could not get element info for click');
+      }
+
       await this.page.mouse.click(x, y);
-      logger.debug(`Remote click at (${x}, ${y})`);
+
+      // Server-side event capture — always record the click
+      const clickEvent = {
+        type: 'click',
+        timestamp: Date.now(),
+        x, y,
+        selector: elementInfo.selector || `coords(${x},${y})`,
+        tag: elementInfo.tag || 'unknown',
+        text: elementInfo.text || '',
+        url: this.page.url(),
+        _serverCaptured: true,
+      };
+      this._handleRecordedEvent(JSON.stringify(clickEvent));
+
+      logger.debug(`Remote click at (${x}, ${y}) → ${elementInfo.selector || 'unknown'}`);
     } catch (err) {
       logger.warn(`Remote click failed: ${err.message}`);
     }
@@ -477,8 +535,37 @@ class Recorder {
   async handleRemoteType(text) {
     if (!this.isRecording || !this.page || !this.browserManager?.isAlive()) return;
     try {
+      // Get the currently focused element selector
+      let selector = 'body';
+      try {
+        selector = await this.page.evaluate(() => {
+          const el = document.activeElement;
+          if (!el || el === document.body) return 'body';
+          if (el.id) return '#' + CSS.escape(el.id);
+          const name = el.getAttribute('name');
+          if (name) return el.tagName.toLowerCase() + '[name="' + name + '"]';
+          const type = el.getAttribute('type');
+          if (type) return el.tagName.toLowerCase() + '[type="' + type + '"]';
+          return el.tagName.toLowerCase();
+        });
+      } catch (e) {}
+
       await this.page.keyboard.type(text, { delay: 30 });
-      logger.debug(`Remote type: "${text.substring(0, 20)}..."`);
+
+      // Server-side capture
+      const isPassword = selector.includes('password');
+      const typeEvent = {
+        type: isPassword ? 'type_password' : 'type',
+        timestamp: Date.now(),
+        selector,
+        value: isPassword ? '{{PASSWORD}}' : text,
+        tag: 'INPUT',
+        url: this.page.url(),
+        _serverCaptured: true,
+      };
+      this._handleRecordedEvent(JSON.stringify(typeEvent));
+
+      logger.debug(`Remote type: "${text.substring(0, 20)}..." → ${selector}`);
     } catch (err) {
       logger.warn(`Remote type failed: ${err.message}`);
     }
@@ -491,6 +578,17 @@ class Recorder {
     if (!this.isRecording || !this.page || !this.browserManager?.isAlive()) return;
     try {
       await this.page.keyboard.press(key);
+
+      // Server-side capture
+      const keyEvent = {
+        type: 'keyboard',
+        timestamp: Date.now(),
+        key,
+        url: this.page.url(),
+        _serverCaptured: true,
+      };
+      this._handleRecordedEvent(JSON.stringify(keyEvent));
+
       logger.debug(`Remote key press: ${key}`);
     } catch (err) {
       logger.warn(`Remote key press failed: ${err.message}`);
@@ -504,6 +602,20 @@ class Recorder {
     if (!this.isRecording || !this.page || !this.browserManager?.isAlive()) return;
     try {
       await this.page.mouse.wheel({ deltaX, deltaY });
+
+      // Server-side capture (only for significant scrolls)
+      if (Math.abs(deltaY) > 50) {
+        const scrollEvent = {
+          type: 'scroll',
+          timestamp: Date.now(),
+          direction: deltaY > 0 ? 'down' : 'up',
+          pixels: Math.abs(Math.round(deltaY)),
+          url: this.page.url(),
+          _serverCaptured: true,
+        };
+        this._handleRecordedEvent(JSON.stringify(scrollEvent));
+      }
+
       logger.debug(`Remote scroll: (${deltaX}, ${deltaY})`);
     } catch (err) {
       logger.warn(`Remote scroll failed: ${err.message}`);
@@ -516,11 +628,16 @@ class Recorder {
   async handleRemoteNavigate(url) {
     if (!this.isRecording || !this.page || !this.browserManager?.isAlive()) return;
     try {
-      // Ensure URL has protocol
       if (!url.startsWith('http://') && !url.startsWith('https://')) {
         url = 'https://' + url;
       }
       await this.page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
+
+      // Re-inject recording script and re-expose __recordEvent after navigation
+      try {
+        await this.page.evaluate(RECORDING_SCRIPT).catch(() => {});
+      } catch (e) {}
+
       logger.debug(`Remote navigate to: ${url}`);
     } catch (err) {
       logger.warn(`Remote navigate failed: ${err.message}`);
@@ -606,29 +723,40 @@ class Recorder {
     try {
       const event = JSON.parse(eventJson);
 
+      // Dedup: if this is a browser-side event and we already have a matching server-side event, skip
+      if (!event._serverCaptured) {
+        const lastStep = this.recordedSteps[this.recordedSteps.length - 1];
+        if (lastStep && lastStep._serverCaptured && lastStep.type === event.type) {
+          const timeDiff = Math.abs(event.timestamp - lastStep.timestamp);
+          if (timeDiff < 1500) {
+            logger.debug(`Skipping duplicate browser-side event: ${event.type} (server already captured)`);
+            return;
+          }
+        }
+      }
+
       // Calculate wait time since last event
       if (this.lastEventTime) {
         const waitMs = event.timestamp - this.lastEventTime;
         if (waitMs > 2000) {
-          // Add an implicit wait step
           this.recordedSteps.push({
             type: 'wait',
             timestamp: this.lastEventTime,
-            duration: Math.min(waitMs, 30000), // Cap at 30s
+            duration: Math.min(waitMs, 30000),
           });
         }
       }
       this.lastEventTime = event.timestamp;
 
-      // Don't record duplicate clicks on same element within 500ms
+      // Don't record duplicate clicks on same element within 1s
       const lastStep = this.recordedSteps[this.recordedSteps.length - 1];
       if (lastStep && lastStep.type === 'click' && event.type === 'click') {
-        if (lastStep.selector === event.selector && (event.timestamp - lastStep.timestamp) < 500) {
-          return; // Skip duplicate
+        if (lastStep.selector === event.selector && (event.timestamp - lastStep.timestamp) < 1000) {
+          return;
         }
       }
 
-      // Don't record type events followed by keyboard Enter (they're the same action)
+      // Don't record type events followed by keyboard Enter (already included)
       if (event.type === 'keyboard' && event.key === 'Enter' && lastStep?.type === 'type') {
         // Merge: the type step already captured the value
       }

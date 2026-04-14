@@ -11,12 +11,14 @@ const RecorderUI = {
   _frameCount: 0,
   _lastFpsUpdate: 0,
   _receivedFirstFrame: false,
+  _pendingStep: null,  // Step waiting for approval
+  _isFullscreen: false,
 
   /**
    * Initialize recorder UI
    */
   init() {
-    // Listen for recorder WebSocket events
+    // Listen for recorder WebSocket events (step approval mode)
     WS.on('recorder_event', (data) => this._handleRecorderEvent(data));
     // Listen for screen frames from server
     WS.on('screen_frame', (data) => this._handleScreenFrame(data));
@@ -138,6 +140,7 @@ const RecorderUI = {
           description: `Recorded flow (${this.recordedSteps.length} steps)`,
           steps: this.recordedSteps,
           category: 'recorded',
+          profileName: this.selectedProfile || 'default',
         }),
       });
 
@@ -206,6 +209,74 @@ const RecorderUI = {
     this.recordedSteps.push(waitStep);
     this._renderRecordedSteps();
     App.toast(`⏱ Added wait step: ${seconds} seconds`, 'success');
+  },
+
+  // ─── Fullscreen ─────────────────────────────────
+
+  /**
+   * Toggle fullscreen for the remote browser viewer
+   */
+  toggleFullscreen() {
+    const viewer = document.getElementById('remote-browser-viewer');
+    if (!viewer) return;
+
+    if (!this._isFullscreen) {
+      // Enter fullscreen
+      if (viewer.requestFullscreen) viewer.requestFullscreen();
+      else if (viewer.webkitRequestFullscreen) viewer.webkitRequestFullscreen();
+      this._isFullscreen = true;
+    } else {
+      // Exit fullscreen
+      if (document.exitFullscreen) document.exitFullscreen();
+      else if (document.webkitExitFullscreen) document.webkitExitFullscreen();
+      this._isFullscreen = false;
+    }
+
+    // Update button icon
+    const btn = document.getElementById('remote-fullscreen-btn');
+    if (btn) btn.textContent = this._isFullscreen ? '⛌' : '⛶';
+  },
+
+  // ─── Step Approval ──────────────────────────────
+
+  /**
+   * Show approval banner for a new step
+   */
+  _showStepApproval(step) {
+    this._pendingStep = step;
+    const banner = document.getElementById('step-approval-banner');
+    const text = document.getElementById('step-approval-text');
+    
+    if (banner && text) {
+      text.textContent = `${step.action}: ${step.description || 'New action detected'}`;
+      banner.style.display = 'flex';
+      banner.classList.add('step-approval-animate');
+      setTimeout(() => banner.classList.remove('step-approval-animate'), 300);
+    }
+  },
+
+  /**
+   * Accept the pending step
+   */
+  approveStep() {
+    if (!this._pendingStep) return;
+    this.recordedSteps.push(this._pendingStep);
+    this._renderRecordedSteps();
+    App.toast(`✅ Step accepted: ${this._pendingStep.description || this._pendingStep.action}`, 'success');
+    this._pendingStep = null;
+    const banner = document.getElementById('step-approval-banner');
+    if (banner) banner.style.display = 'none';
+  },
+
+  /**
+   * Reject the pending step
+   */
+  rejectStep() {
+    if (!this._pendingStep) return;
+    App.toast(`❌ Step rejected: ${this._pendingStep.description || this._pendingStep.action}`, 'info');
+    this._pendingStep = null;
+    const banner = document.getElementById('step-approval-banner');
+    if (banner) banner.style.display = 'none';
   },
 
   // ─── Remote Browser Viewer ─────────────────────
@@ -416,8 +487,15 @@ const RecorderUI = {
 
   _handleRecorderEvent(data) {
     if (data.step) {
-      this.recordedSteps.push(data.step);
-      this._renderRecordedSteps();
+      // Auto-approve navigation and wait steps (these are just URL changes)
+      const autoApproveActions = ['navigate', 'wait'];
+      if (autoApproveActions.includes(data.step.action)) {
+        this.recordedSteps.push(data.step);
+        this._renderRecordedSteps();
+      } else {
+        // Show approval banner for action steps (click, type, keyboard, scroll)
+        this._showStepApproval(data.step);
+      }
 
       // Auto-scroll to latest step
       const list = document.getElementById('recorder-steps-list');
