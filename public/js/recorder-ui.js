@@ -421,8 +421,25 @@ const RecorderUI = {
    */
   _navigateToUrl(url) {
     if (!url || !this.isRecording) return;
+    
+    // Lock URL bar from being overwritten by screen frames for 5 seconds
+    this._urlLockUntil = Date.now() + 5000;
+    
+    // Ensure URL has protocol
+    if (!url.startsWith('http://') && !url.startsWith('https://') && !url.startsWith('about:')) {
+      url = 'https://' + url;
+    }
+    
+    console.log('[RemoteViewer] Navigating to:', url);
     WS.send({ type: 'remote_navigate', url });
-    App.toast(`Navigating to ${url}...`, 'info');
+    App.toast(`🔄 Navigating to ${url}...`, 'info');
+
+    // Also try via REST API as fallback (in case WebSocket navigate fails)
+    fetch('/api/recorder/navigate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url }),
+    }).catch(() => {});
   },
 
   /**
@@ -481,8 +498,11 @@ const RecorderUI = {
         screen.style.position = 'relative';
       }
 
-      // Update URL bar only when user is NOT actively editing it
-      if (urlInput && data.url && document.activeElement !== urlInput) {
+      // Update URL bar only when:
+      // 1. User is NOT actively editing it (focused)
+      // 2. URL is NOT locked (after navigation, lock for 5s to prevent old URL flash-back)
+      const isUrlLocked = this._urlLockUntil && Date.now() < this._urlLockUntil;
+      if (urlInput && data.url && document.activeElement !== urlInput && !isUrlLocked) {
         urlInput.value = data.url;
       }
 

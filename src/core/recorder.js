@@ -631,23 +631,44 @@ class Recorder {
       if (!url.startsWith('http://') && !url.startsWith('https://')) {
         url = 'https://' + url;
       }
+
+      // Dedup: prevent double navigate (WebSocket + REST API both fire)
+      if (this._lastNavigateUrl === url && Date.now() - (this._lastNavigateTime || 0) < 3000) {
+        logger.debug(`Skipping duplicate navigate to: ${url}`);
+        return;
+      }
+      this._lastNavigateUrl = url;
+      this._lastNavigateTime = Date.now();
+
       logger.info(`Remote navigate starting: ${url}`);
 
-      // Fire navigation without blocking — use short timeout so UI doesn't freeze
-      // The screen streaming will show the page as it loads
-      this.page.goto(url, { waitUntil: 'load', timeout: 15000 })
+      // Try page.goto first (non-blocking)
+      const gotoPromise = this.page.goto(url, { waitUntil: 'domcontentloaded', timeout: 10000 });
+
+      gotoPromise
         .then(() => {
           logger.info(`Remote navigate completed: ${url}`);
-          // Re-inject recording script after navigation
           this.page.evaluate(RECORDING_SCRIPT).catch(() => {});
         })
-        .catch((err) => {
-          // Timeout is OK — page may still be usable
-          logger.warn(`Remote navigate timeout/error (non-fatal): ${err.message}`);
-          // Still try to re-inject script
-          if (this.page) {
-            this.page.evaluate(RECORDING_SCRIPT).catch(() => {});
+        .catch(async (err) => {
+          logger.warn(`page.goto failed, using window.location fallback: ${err.message}`);
+          // Fallback: use JavaScript navigation (works even when goto fails)
+          try {
+            if (this.page) {
+              await this.page.evaluate((targetUrl) => {
+                window.location.href = targetUrl;
+              }, url);
+              logger.info(`Fallback navigation succeeded: ${url}`);
+            }
+          } catch (e2) {
+            logger.warn(`Fallback navigation also failed: ${e2.message}`);
           }
+          // Re-inject script after fallback
+          setTimeout(() => {
+            if (this.page) {
+              this.page.evaluate(RECORDING_SCRIPT).catch(() => {});
+            }
+          }, 3000);
         });
     } catch (err) {
       logger.warn(`Remote navigate failed: ${err.message}`);

@@ -89,5 +89,21 @@ router.post('/reset', async (req, res) => {
   }
 });
 
+/**
+ * POST /api/recorder/navigate
+ * Navigate the recording browser to a URL (REST API fallback)
+ */
+router.post('/navigate', async (req, res) => {
+  try {
+    const { url } = req.body;
+    if (!url) return res.status(400).json({ success: false, error: 'URL required' });
+    
+    recorder.handleRemoteNavigate(url);
+    res.json({ success: true, message: `Navigating to ${url}` });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 module.exports = router;
 module.exports.setRecorderBroadcast = setRecorderBroadcast;
