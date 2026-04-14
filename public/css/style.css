@@ -2696,7 +2696,45 @@ select.input {
   }
 }
 
+/* ─── Browser Nav Buttons (Back/Forward/Refresh) ── */
+
+.remote-browser-nav-btns {
+  display: flex;
+  gap: 4px;
+  margin-right: 6px;
+  flex-shrink: 0;
+}
+
+.remote-nav-btn {
+  background: rgba(255,255,255,0.08);
+  border: 1px solid rgba(255,255,255,0.15);
+  color: #ccc;
+  font-size: 16px;
+  width: 30px;
+  height: 30px;
+  border-radius: 6px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+  padding: 0;
+  line-height: 1;
+}
+
+.remote-nav-btn:hover {
+  background: rgba(255,255,255,0.2);
+  color: #fff;
+  transform: scale(1.08);
+}
+
+.remote-nav-btn:active {
+  transform: scale(0.95);
+  background: rgba(14,165,233,0.3);
+}
+
 /* ─── Fullscreen Button ───────────────────── */
+
 
 .remote-fullscreen-btn {
   background: rgba(255,255,255,0.1);

@@ -237,6 +237,35 @@ const RecorderUI = {
     if (btn) btn.textContent = this._isFullscreen ? '⛌' : '⛶';
   },
 
+  // ─── Browser Navigation ─────────────────────────
+
+  /**
+   * Go back in browser history
+   */
+  goBack() {
+    if (!this.isRecording) return;
+    WS.send({ type: 'remote_back' });
+    App.toast('⬅ Going back...', 'info');
+  },
+
+  /**
+   * Go forward in browser history
+   */
+  goForward() {
+    if (!this.isRecording) return;
+    WS.send({ type: 'remote_forward' });
+    App.toast('➡ Going forward...', 'info');
+  },
+
+  /**
+   * Refresh the current page
+   */
+  refreshPage() {
+    if (!this.isRecording) return;
+    WS.send({ type: 'remote_refresh' });
+    App.toast('🔄 Refreshing...', 'info');
+  },
+
   // ─── Step Approval ──────────────────────────────
 
   /**

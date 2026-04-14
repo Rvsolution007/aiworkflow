@@ -746,6 +746,45 @@ class Recorder {
     }
   }
 
+  /**
+   * Handle remote browser back
+   */
+  async handleRemoteBack() {
+    if (!this.page || !this.browserManager?.isAlive()) return;
+    try {
+      await this.page.goBack({ waitUntil: 'domcontentloaded', timeout: 8000 }).catch(() => {});
+      logger.info('Remote: went back');
+    } catch (err) {
+      logger.warn(`Remote back failed: ${err.message}`);
+    }
+  }
+
+  /**
+   * Handle remote browser forward
+   */
+  async handleRemoteForward() {
+    if (!this.page || !this.browserManager?.isAlive()) return;
+    try {
+      await this.page.goForward({ waitUntil: 'domcontentloaded', timeout: 8000 }).catch(() => {});
+      logger.info('Remote: went forward');
+    } catch (err) {
+      logger.warn(`Remote forward failed: ${err.message}`);
+    }
+  }
+
+  /**
+   * Handle remote browser refresh
+   */
+  async handleRemoteRefresh() {
+    if (!this.page || !this.browserManager?.isAlive()) return;
+    try {
+      await this.page.reload({ waitUntil: 'domcontentloaded', timeout: 10000 }).catch(() => {});
+      logger.info('Remote: page refreshed');
+    } catch (err) {
+      logger.warn(`Remote refresh failed: ${err.message}`);
+    }
+  }
+
   // ─── Screen Streaming ──────────────────────────
 
   /**

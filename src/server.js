@@ -82,6 +82,15 @@ wss.on('connection', (ws) => {
         case 'remote_navigate':
           recorder.handleRemoteNavigate(msg.url);
           break;
+        case 'remote_back':
+          recorder.handleRemoteBack();
+          break;
+        case 'remote_forward':
+          recorder.handleRemoteForward();
+          break;
+        case 'remote_refresh':
+          recorder.handleRemoteRefresh();
+          break;
         case 'remote_mousemove':
           recorder.handleRemoteMouseMove(msg.x, msg.y);
           break;
