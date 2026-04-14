@@ -81,6 +81,7 @@ const App = {
     if (section === 'execution') this.loadFlowsForSelect();
     if (section === 'credentials') this.loadCredentials();
     if (section === 'sessions') SessionsUI.loadSessions();
+    if (section === 'recorder') this._loadProfilesForRecorder();
   },
 
   /**
@@ -581,6 +582,42 @@ const App = {
   },
 
   // ─── Helpers ─────────────────────────────────────
+
+  /**
+   * Load credentials as browser profiles for recorder dropdown
+   */
+  async _loadProfilesForRecorder() {
+    const select = document.getElementById('recorder-profile-select');
+    if (!select) return;
+
+    // Keep current selection
+    const currentValue = select.value;
+
+    // Start with default
+    select.innerHTML = '<option value="default">Default Profile</option>';
+
+    // Add profiles from credentials
+    try {
+      const res = await fetch('/api/credentials');
+      const data = await res.json();
+      if (data.success && data.credentials) {
+        data.credentials.forEach(cred => {
+          const opt = document.createElement('option');
+          opt.value = cred.name;
+          opt.textContent = `🔑 ${cred.label || cred.name}`;
+          select.appendChild(opt);
+        });
+      }
+    } catch (e) {
+      console.error('Failed to load profiles for recorder:', e);
+    }
+
+    // Restore selection if still valid
+    if (currentValue) {
+      const exists = Array.from(select.options).some(o => o.value === currentValue);
+      if (exists) select.value = currentValue;
+    }
+  },
 
   _escapeHtml(text) {
     if (!text) return '';
