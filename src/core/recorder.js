@@ -464,13 +464,15 @@ class Recorder {
   async handleRemoteClick(x, y) {
     if (!this.isRecording || !this.page || !this.browserManager?.isAlive()) return;
     try {
-      // Get element info BEFORE clicking (for selector capture)
+      // Click FIRST — never block the click waiting for element info
+      await this.page.mouse.click(x, y);
+
+      // Then capture element info (non-blocking, with timeout)
       let elementInfo = {};
       try {
-        elementInfo = await this.page.evaluate((cx, cy) => {
+        const infoPromise = this.page.evaluate((cx, cy) => {
           const el = document.elementFromPoint(cx, cy);
           if (!el) return {};
-
           function getCssSelector(el) {
             if (!el || el === document.body) return 'body';
             if (el.id) return '#' + CSS.escape(el.id);
@@ -496,21 +498,21 @@ class Recorder {
             }
             return path.join(' > ');
           }
-
           return {
             selector: getCssSelector(el),
             tag: el.tagName,
             text: (el.textContent || '').trim().substring(0, 80),
-            href: el.href || '',
           };
         }, x, y);
+
+        // Race with 2s timeout — if page is navigating, don't hang
+        const timeout = new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 2000));
+        elementInfo = await Promise.race([infoPromise, timeout]);
       } catch (e) {
-        logger.debug('Could not get element info for click');
+        // Timeout or context destroyed — that's fine, click already happened
       }
 
-      await this.page.mouse.click(x, y);
-
-      // Server-side event capture — always record the click
+      // Server-side event capture
       const clickEvent = {
         type: 'click',
         timestamp: Date.now(),
@@ -535,10 +537,10 @@ class Recorder {
   async handleRemoteType(text) {
     if (!this.isRecording || !this.page || !this.browserManager?.isAlive()) return;
     try {
-      // Get the currently focused element selector
+      // Get the currently focused element selector (with timeout to prevent hang)
       let selector = 'body';
       try {
-        selector = await this.page.evaluate(() => {
+        const selectorPromise = this.page.evaluate(() => {
           const el = document.activeElement;
           if (!el || el === document.body) return 'body';
           if (el.id) return '#' + CSS.escape(el.id);
@@ -548,6 +550,8 @@ class Recorder {
           if (type) return el.tagName.toLowerCase() + '[type="' + type + '"]';
           return el.tagName.toLowerCase();
         });
+        const timeout = new Promise((resolve) => setTimeout(() => resolve('body'), 2000));
+        selector = await Promise.race([selectorPromise, timeout]);
       } catch (e) {}
 
       await this.page.keyboard.type(text, { delay: 30 });
@@ -647,18 +651,20 @@ class Recorder {
 
       // PRIMARY: Use window.location.href (most reliable, works on all pages)
       try {
-        await this.page.evaluate((targetUrl) => {
+        const navPromise = this.page.evaluate((targetUrl) => {
           window.location.href = targetUrl;
         }, url);
+        const navTimeout = new Promise((_, reject) => setTimeout(() => reject(new Error('nav timeout')), 5000));
+        await Promise.race([navPromise, navTimeout]);
         logger.info(`Navigation triggered via window.location: ${url}`);
       } catch (e1) {
-        logger.warn(`window.location failed (${e1.message}), trying page.goto...`);
-        // FALLBACK: Use page.goto
+        logger.warn(`window.location failed/timeout (${e1.message}), trying page.goto...`);
+        // FALLBACK: Use page.goto with short timeout
         try {
-          await this.page.goto(url, { waitUntil: 'domcontentloaded', timeout: 10000 });
+          await this.page.goto(url, { waitUntil: 'domcontentloaded', timeout: 8000 });
           logger.info(`Navigation via page.goto succeeded: ${url}`);
         } catch (e2) {
-          logger.warn(`page.goto also failed: ${e2.message}`);
+          logger.warn(`page.goto also failed: ${e2.message} — page may still be usable`);
         }
       }
 
