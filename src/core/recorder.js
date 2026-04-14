@@ -626,7 +626,10 @@ class Recorder {
    * Handle remote URL navigation from frontend
    */
   async handleRemoteNavigate(url) {
-    if (!this.isRecording || !this.page || !this.browserManager?.isAlive()) return;
+    if (!this.page || !this.browserManager?.isAlive()) {
+      logger.warn('Cannot navigate — no active page/browser');
+      return;
+    }
     try {
       if (!url.startsWith('http://') && !url.startsWith('https://')) {
         url = 'https://' + url;
@@ -640,38 +643,33 @@ class Recorder {
       this._lastNavigateUrl = url;
       this._lastNavigateTime = Date.now();
 
-      logger.info(`Remote navigate starting: ${url}`);
+      logger.info(`Remote navigate → ${url}`);
 
-      // Try page.goto first (non-blocking)
-      const gotoPromise = this.page.goto(url, { waitUntil: 'domcontentloaded', timeout: 10000 });
+      // PRIMARY: Use window.location.href (most reliable, works on all pages)
+      try {
+        await this.page.evaluate((targetUrl) => {
+          window.location.href = targetUrl;
+        }, url);
+        logger.info(`Navigation triggered via window.location: ${url}`);
+      } catch (e1) {
+        logger.warn(`window.location failed (${e1.message}), trying page.goto...`);
+        // FALLBACK: Use page.goto
+        try {
+          await this.page.goto(url, { waitUntil: 'domcontentloaded', timeout: 10000 });
+          logger.info(`Navigation via page.goto succeeded: ${url}`);
+        } catch (e2) {
+          logger.warn(`page.goto also failed: ${e2.message}`);
+        }
+      }
 
-      gotoPromise
-        .then(() => {
-          logger.info(`Remote navigate completed: ${url}`);
+      // Wait a moment for navigation to begin, then re-inject recording script
+      setTimeout(() => {
+        if (this.page) {
           this.page.evaluate(RECORDING_SCRIPT).catch(() => {});
-        })
-        .catch(async (err) => {
-          logger.warn(`page.goto failed, using window.location fallback: ${err.message}`);
-          // Fallback: use JavaScript navigation (works even when goto fails)
-          try {
-            if (this.page) {
-              await this.page.evaluate((targetUrl) => {
-                window.location.href = targetUrl;
-              }, url);
-              logger.info(`Fallback navigation succeeded: ${url}`);
-            }
-          } catch (e2) {
-            logger.warn(`Fallback navigation also failed: ${e2.message}`);
-          }
-          // Re-inject script after fallback
-          setTimeout(() => {
-            if (this.page) {
-              this.page.evaluate(RECORDING_SCRIPT).catch(() => {});
-            }
-          }, 3000);
-        });
+        }
+      }, 3000);
     } catch (err) {
-      logger.warn(`Remote navigate failed: ${err.message}`);
+      logger.error(`Remote navigate failed completely: ${err.message}`);
     }
   }
 
