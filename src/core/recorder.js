@@ -262,22 +262,12 @@ class Recorder {
   async start(options = {}) {
     // If already recording, force cleanup the old session first
     if (this.isRecording) {
-      logger.warn('Previous recording session still active — force cleaning up...');
-      try {
-        this._stopScreenStream();
-        if (this.popupDismissInterval) {
-          clearInterval(this.popupDismissInterval);
-          this.popupDismissInterval = null;
-        }
-        if (this.browserManager) {
-          await this.browserManager.close().catch(() => {});
-        }
-      } catch (e) {}
-      this.browserManager = null;
-      this.page = null;
-      this.isRecording = false;
-      this.recordedSteps = [];
-      logger.info('Old recording session cleaned up');
+      logger.warn('Recording already active — refusing to start a new one');
+      return { 
+        success: false, 
+        message: '⚠️ Recording already active on another session. Stop that recording first before starting a new one.',
+        alreadyRecording: true,
+      };
     }
 
     this.profileName = options.profileName || 'default';
@@ -877,17 +867,36 @@ class Recorder {
       }
       this.lastEventTime = event.timestamp;
 
-      // Don't record duplicate clicks on same element within 1s
-      const lastStep = this.recordedSteps[this.recordedSteps.length - 1];
-      if (lastStep && lastStep.type === 'click' && event.type === 'click') {
-        if (lastStep.selector === event.selector && (event.timestamp - lastStep.timestamp) < 1000) {
+      // ─── Dedup: skip duplicate/redundant events ───
+      const lastStep2 = this.recordedSteps[this.recordedSteps.length - 1];
+
+      // Skip duplicate clicks on same element within 2s
+      if (lastStep2 && lastStep2.type === 'click' && event.type === 'click') {
+        if (lastStep2.selector === event.selector && (event.timestamp - lastStep2.timestamp) < 2000) {
           return;
         }
       }
 
-      // Don't record type events followed by keyboard Enter (already included)
-      if (event.type === 'keyboard' && event.key === 'Enter' && lastStep?.type === 'type') {
-        // Merge: the type step already captured the value
+      // Merge consecutive type events into single step (instead of one step per character)
+      if (lastStep2 && lastStep2.type === 'type' && event.type === 'type') {
+        if (lastStep2.selector === event.selector && (event.timestamp - lastStep2.timestamp) < 3000) {
+          lastStep2.value = (lastStep2.value || '') + (event.value || '');
+          lastStep2.timestamp = event.timestamp;
+          logger.debug(`Merged type event: "${lastStep2.value}"`);
+          return;
+        }
+      }
+
+      // Skip rapid scroll events (keep only 1 every 2 seconds)
+      if (event.type === 'scroll') {
+        if (lastStep2 && lastStep2.type === 'scroll' && (event.timestamp - lastStep2.timestamp) < 2000) {
+          return;
+        }
+      }
+
+      // Skip keyboard Enter right after type (already part of the type flow)
+      if (event.type === 'keyboard' && event.key === 'Enter' && lastStep2?.type === 'type') {
+        // Don't skip — Enter is important, but don't create extra step
       }
 
       this.recordedSteps.push(event);
@@ -915,11 +924,30 @@ class Recorder {
     if (!this.isRecording) return;
     if (!url || url === 'about:blank') return;
 
+    // Skip Chrome internal URLs
+    if (url.startsWith('chrome://') || url.startsWith('chrome-extension://') || url.startsWith('devtools://')) return;
+
     // Don't duplicate if last step was same URL
     const lastStep = this.recordedSteps[this.recordedSteps.length - 1];
     if (lastStep && lastStep.type === 'navigate' && lastStep.url === url) return;
 
+    // Skip rapid same-domain navigations (Google redirects cause 5-10 navigations in 2 seconds)
     const now = Date.now();
+    if (this._lastNavTime && (now - this._lastNavTime) < 2000) {
+      // Same domain? Just update the last navigate step URL instead of adding new
+      try {
+        const lastUrl = new URL(lastStep?.url || '');
+        const newUrl = new URL(url);
+        if (lastStep && lastStep.type === 'navigate' && lastUrl.hostname === newUrl.hostname) {
+          lastStep.url = url; // Update URL, don't add new step
+          this._lastNavTime = now;
+          logger.debug(`Updated navigate URL (same-domain redirect): ${url}`);
+          return;
+        }
+      } catch (e) {} // URL parse failed, continue normally
+    }
+    this._lastNavTime = now;
+
     if (this.lastEventTime) {
       const waitMs = now - this.lastEventTime;
       if (waitMs > 2000) {
@@ -934,15 +962,12 @@ class Recorder {
       url,
     });
 
-    // Re-inject recording script (page.evaluateOnNewDocument handles future pages,
-    // but for the current navigation we need to re-inject)
+    // Re-inject recording script
     if (this.page) {
       setTimeout(async () => {
         try {
           await this.page.evaluate(RECORDING_SCRIPT);
-        } catch (e) {
-          // Page might not be ready yet, that's OK
-        }
+        } catch (e) {}
       }, 1500);
     }
 
