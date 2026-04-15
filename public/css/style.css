@@ -881,7 +881,9 @@ select.input {
 .flow-card-meta {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-start;
+  gap: 8px;
+  flex-wrap: wrap;
 }
 
 .flow-card-steps {
@@ -915,6 +917,43 @@ select.input {
 
 .flow-card:hover .flow-card-actions {
   opacity: 1;
+}
+
+/* ─── Flow Card Warm-up Badge ──────────────────────── */
+.flow-card-warmup {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 3px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  user-select: none;
+}
+
+.flow-card-warmup.warmup-on {
+  background: rgba(245, 158, 11, 0.1);
+  color: #d97706;
+  border: 1px solid rgba(245, 158, 11, 0.2);
+}
+
+.flow-card-warmup.warmup-on:hover {
+  background: rgba(245, 158, 11, 0.2);
+  border-color: rgba(245, 158, 11, 0.4);
+  transform: scale(1.05);
+}
+
+.flow-card-warmup.warmup-off {
+  background: rgba(107, 131, 158, 0.08);
+  color: var(--text-muted);
+  border: 1px solid rgba(107, 131, 158, 0.1);
+  opacity: 0.7;
+}
+
+.flow-card-warmup.warmup-off:hover {
+  opacity: 1;
+  background: rgba(245, 158, 11, 0.08);
+  color: #d97706;
+  transform: scale(1.05);
 }
 
 /* ─── Flow Card Timer Widget ───────────────────────── */

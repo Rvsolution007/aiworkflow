@@ -7,6 +7,8 @@
  */
 
 const logger = require('../utils/logger');
+const sessionWarmer = require('./session-warmer');
+const BrowserManager = require('./browser-manager');
 
 class Scheduler {
   constructor() {
@@ -48,6 +50,35 @@ class Scheduler {
     const ms = intervalMinutes * 60 * 1000;
     const nextRun = new Date(Date.now() + ms);
 
+    // ─── Schedule warm-up during the break period ───
+    // Run warm-up 5 minutes before the actual execution
+    // This builds browsing history during idle time
+    let warmupTimer = null;
+    const warmupMs = Math.max(ms - (5 * 60 * 1000), ms * 0.5); // 5 min before, or halfway
+    if (warmupMs > 60000) { // Only if break is longer than 1 minute
+      warmupTimer = setTimeout(async () => {
+        try {
+          const Flow = require('../models/Flow');
+          const flow = Flow.findById(flowId);
+          if (!flow || flow.warmUpEnabled === false) return;
+
+          const profileName = flow.profileName || `flow_${flowId}`;
+          logger.info(`[SCHEDULER] 🔥 Running break-time warm-up for flow ${flowId}`);
+
+          this._broadcastTimerUpdate(flowId, { warmupStatus: 'running' });
+
+          const bm = new BrowserManager();
+          await sessionWarmer.warmUpDuringBreak(bm, profileName);
+
+          this._broadcastTimerUpdate(flowId, { warmupStatus: 'completed' });
+          logger.info(`[SCHEDULER] ✅ Break-time warm-up done for flow ${flowId}`);
+        } catch (err) {
+          logger.warn(`[SCHEDULER] Break-time warm-up failed: ${err.message}`);
+          this._broadcastTimerUpdate(flowId, { warmupStatus: 'failed' });
+        }
+      }, warmupMs);
+    }
+
     const timer = setTimeout(async () => {
       await this._executeAndReschedule(flowId, intervalMinutes);
     }, ms);
@@ -56,6 +87,7 @@ class Scheduler {
     const existing = this.timers.get(flowId);
     this.timers.set(flowId, {
       timer,
+      warmupTimer,
       nextRun,
       interval: intervalMinutes,
       enabled: true,
@@ -72,9 +104,15 @@ class Scheduler {
    */
   _clearTimer(flowId) {
     const existing = this.timers.get(flowId);
-    if (existing && existing.timer) {
-      clearTimeout(existing.timer);
-      existing.timer = null;
+    if (existing) {
+      if (existing.timer) {
+        clearTimeout(existing.timer);
+        existing.timer = null;
+      }
+      if (existing.warmupTimer) {
+        clearTimeout(existing.warmupTimer);
+        existing.warmupTimer = null;
+      }
     }
   }
 
@@ -253,13 +291,14 @@ class Scheduler {
   /**
    * Broadcast timer status update via WebSocket
    */
-  _broadcastTimerUpdate(flowId) {
+  _broadcastTimerUpdate(flowId, extra = {}) {
     if (!this.wsBroadcast) return;
     try {
       this.wsBroadcast(JSON.stringify({
         type: 'timer_update',
         flowId,
         ...this.getStatus(flowId),
+        ...extra,
       }));
     } catch (e) {}
   }

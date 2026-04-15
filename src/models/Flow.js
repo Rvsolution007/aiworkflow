@@ -9,12 +9,12 @@ const Flow = {
   /**
    * Create a new flow
    */
-  create({ name, description = '', steps = [], category = 'general', profileName = 'default' }) {
+  create({ name, description = '', steps = [], category = 'general', profileName = 'default', warmUpEnabled = true }) {
     const stmt = db.prepare(`
-      INSERT INTO flows (name, description, steps, category, profile_name)
-      VALUES (?, ?, ?, ?, ?)
+      INSERT INTO flows (name, description, steps, category, profile_name, warm_up_enabled)
+      VALUES (?, ?, ?, ?, ?, ?)
     `);
-    const result = stmt.run(name, description, JSON.stringify(steps), category, profileName);
+    const result = stmt.run(name, description, JSON.stringify(steps), category, profileName, warmUpEnabled ? 1 : 0);
     return this.findById(result.lastInsertRowid);
   },
 
@@ -26,6 +26,7 @@ const Flow = {
     if (row) {
       row.steps = JSON.parse(row.steps);
       row.profileName = row.profile_name || 'default';
+      row.warmUpEnabled = row.warm_up_enabled !== 0;
     }
     return row || null;
   },
@@ -40,13 +41,13 @@ const Flow = {
     } else {
       rows = db.prepare('SELECT * FROM flows ORDER BY updated_at DESC').all();
     }
-    return rows.map(row => ({ ...row, steps: JSON.parse(row.steps), profileName: row.profile_name || 'default' }));
+    return rows.map(row => ({ ...row, steps: JSON.parse(row.steps), profileName: row.profile_name || 'default', warmUpEnabled: row.warm_up_enabled !== 0 }));
   },
 
   /**
    * Update a flow
    */
-  update(id, { name, description, steps, category, is_favorite, profileName }) {
+  update(id, { name, description, steps, category, is_favorite, profileName, warmUpEnabled }) {
     const existing = this.findById(id);
     if (!existing) return null;
 
@@ -58,6 +59,7 @@ const Flow = {
         category = COALESCE(?, category),
         is_favorite = COALESCE(?, is_favorite),
         profile_name = COALESCE(?, profile_name),
+        warm_up_enabled = COALESCE(?, warm_up_enabled),
         updated_at = CURRENT_TIMESTAMP
       WHERE id = ?
     `);
@@ -68,6 +70,7 @@ const Flow = {
       category || null,
       is_favorite !== undefined ? (is_favorite ? 1 : 0) : null,
       profileName || null,
+      warmUpEnabled !== undefined ? (warmUpEnabled ? 1 : 0) : null,
       id
     );
     return this.findById(id);

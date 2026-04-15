@@ -104,10 +104,22 @@ const RecorderUI = {
       this.recordedSteps = [];
       this._continueBaseSteps = null;
       this._continueBaseIndex = 0;
+      this._setRecordingUI(false);
+      this._showViewer(false);
+      this._hideEditMode();
       App.toast('🔄 Previous recording force-stopped.', 'info');
     } catch (err) {
       App.toast(`Reset failed: ${err.message}`, 'error');
     }
+  },
+
+  /**
+   * Force reset with confirmation dialog (called from UI button)
+   */
+  async forceResetWithConfirm() {
+    if (!confirm('⚠️ Force Reset will kill any active/stuck recording session.\n\nAre you sure?')) return;
+    await this.forceReset();
+    App.toast('✅ Recorder fully reset! You can now start a new recording.', 'success');
   },
 
   /**
@@ -224,6 +236,7 @@ const RecorderUI = {
     }
 
     try {
+      const warmUpEnabled = document.getElementById('recorded-warmup-enabled')?.checked !== false;
       const res = await fetch('/api/flows', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -233,6 +246,7 @@ const RecorderUI = {
           steps: this.recordedSteps,
           category: 'recorded',
           profileName: this.selectedProfile || 'default',
+          warmUpEnabled,
         }),
       });
 
@@ -301,6 +315,41 @@ const RecorderUI = {
     this.recordedSteps.push(waitStep);
     this._renderRecordedSteps();
     App.toast(`⏱ Added wait step: ${seconds} seconds`, 'success');
+  },
+
+  /**
+   * Navigate to a URL AND add it as a step (from the manual Add Navigate Step UI)
+   */
+  navigateAndAddStep() {
+    const urlInput = document.getElementById('recorder-add-nav-url');
+    if (!urlInput) return;
+
+    let url = urlInput.value.trim();
+    if (!url) {
+      App.toast('Please enter a URL', 'warning');
+      return;
+    }
+
+    if (!url.startsWith('http://') && !url.startsWith('https://')) {
+      url = 'https://' + url;
+    }
+
+    // Navigate the remote browser
+    if (this.isRecording) {
+      this._navigateToUrl(url);
+    }
+
+    // Also manually add a navigate step
+    const navStep = {
+      action: 'navigate',
+      description: `Navigate to ${(() => { try { return new URL(url).hostname; } catch(e) { return url; } })()}`,
+      params: { url },
+    };
+
+    this.recordedSteps.push(navStep);
+    this._renderRecordedSteps();
+    App.toast(`🌐 Navigate step added + browser navigating to: ${url}`, 'success');
+    urlInput.value = '';
   },
 
   // ─── Fullscreen ─────────────────────────────────
@@ -421,6 +470,25 @@ const RecorderUI = {
 
     console.log('[RemoteViewer] Event handlers registered successfully');
 
+    // Track whether a local input (URL bar, add-nav, wait) is focused — prevents keyboard capture interference
+    this._isLocalInputFocused = false;
+    const localInputs = [urlInput, document.getElementById('recorder-add-nav-url'), document.getElementById('recorder-wait-seconds')].filter(Boolean);
+    localInputs.forEach(inp => {
+      inp.addEventListener('focus', () => {
+        this._isLocalInputFocused = true;
+        console.log('[RemoteViewer] Local input focused — keyboard capture paused');
+      });
+      inp.addEventListener('blur', () => {
+        this._isLocalInputFocused = false;
+        console.log('[RemoteViewer] Local input blurred — keyboard capture resumed');
+      });
+      // Prevent events from bubbling to interfere with remote capture
+      inp.addEventListener('input', (e) => e.stopPropagation());
+      inp.addEventListener('keydown', (e) => e.stopPropagation());
+      inp.addEventListener('keyup', (e) => e.stopPropagation());
+      inp.addEventListener('keypress', (e) => e.stopPropagation());
+    });
+
     // ─── Mouse Click ───────────────────────────
     screen.addEventListener('click', (e) => {
       if (!this.isRecording) return;
@@ -431,8 +499,8 @@ const RecorderUI = {
       // Show click ripple effect
       this._showClickRipple(e, wrapper);
 
-      // Focus keyboard input for subsequent typing
-      if (keyboardInput) keyboardInput.focus();
+      // Focus keyboard input for subsequent typing (only if URL bar is NOT focused)
+      if (keyboardInput && !this._isLocalInputFocused) keyboardInput.focus();
     });
 
     // ─── Mouse Move (throttled) ────────────────
@@ -455,9 +523,10 @@ const RecorderUI = {
 
     // ─── Keyboard Input ────────────────────────
     if (keyboardInput) {
-      // Handle regular typing
+      // Handle regular typing — SKIP if URL bar is focused
       keyboardInput.addEventListener('input', (e) => {
         if (!this.isRecording) return;
+        if (this._isLocalInputFocused) return; // Don't capture URL bar typing
         const text = keyboardInput.value;
         if (text) {
           WS.send({ type: 'remote_type', text: text });
@@ -468,6 +537,7 @@ const RecorderUI = {
       // Handle paste (Ctrl+V / right-click paste)
       keyboardInput.addEventListener('paste', (e) => {
         if (!this.isRecording) return;
+        if (this._isLocalInputFocused) return;
         e.preventDefault();
         const pasted = (e.clipboardData || window.clipboardData).getData('text');
         if (pasted) {
@@ -477,9 +547,10 @@ const RecorderUI = {
         }
       });
 
-      // Handle special keys
+      // Handle special keys — SKIP if URL bar is focused
       keyboardInput.addEventListener('keydown', (e) => {
         if (!this.isRecording) return;
+        if (this._isLocalInputFocused) return;
 
         // Allow Ctrl+V (paste) to bubble to paste handler
         if ((e.ctrlKey || e.metaKey) && e.key === 'v') {
@@ -502,9 +573,9 @@ const RecorderUI = {
       });
     }
 
-    // When clicking the screen, focus keyboard input
+    // When clicking the screen, focus keyboard input (but NOT when URL bar is focused)
     screen.addEventListener('mousedown', () => {
-      if (keyboardInput) {
+      if (keyboardInput && !this._isLocalInputFocused) {
         setTimeout(() => keyboardInput.focus(), 50);
       }
     });
@@ -513,18 +584,28 @@ const RecorderUI = {
     document.addEventListener('click', (e) => {
       const target = e.target;
       if (target && (target.id === 'step-approve-btn' || target.id === 'step-reject-btn')) {
-        if (keyboardInput && this.isRecording) {
+        if (keyboardInput && this.isRecording && !this._isLocalInputFocused) {
           setTimeout(() => keyboardInput.focus(), 100);
         }
       }
     });
 
-    // ─── URL Bar ───────────────────────────────
+    // ─── URL Bar — Navigate on Enter or Go button ───
     if (urlInput) {
       urlInput.addEventListener('keydown', (e) => {
+        e.stopPropagation(); // CRITICAL: prevent remote keyboard interception
         if (e.key === 'Enter') {
           e.preventDefault();
-          this._navigateToUrl(urlInput.value.trim());
+          const url = urlInput.value.trim();
+          if (url) {
+            this._navigateToUrl(url);
+            urlInput.blur(); // Unfocus after navigation
+          }
+        }
+        // Escape to cancel and refocus remote
+        if (e.key === 'Escape') {
+          urlInput.blur();
+          if (keyboardInput) keyboardInput.focus();
         }
       });
     }
@@ -532,19 +613,29 @@ const RecorderUI = {
     if (urlGoBtn) {
       urlGoBtn.addEventListener('click', () => {
         const url = document.getElementById('remote-url-input')?.value?.trim();
-        if (url) this._navigateToUrl(url);
+        if (url) {
+          this._navigateToUrl(url);
+          if (urlInput) urlInput.blur();
+        }
       });
     }
   },
 
   /**
-   * Navigate to URL via WebSocket
+   * Navigate to URL via WebSocket + REST API
    */
   _navigateToUrl(url) {
-    if (!url || !this.isRecording) return;
+    if (!url) {
+      App.toast('Please enter a URL', 'warning');
+      return;
+    }
+    if (!this.isRecording) {
+      App.toast('⚠️ Start recording first before navigating', 'warning');
+      return;
+    }
     
-    // Lock URL bar from being overwritten by screen frames for 5 seconds
-    this._urlLockUntil = Date.now() + 5000;
+    // Lock URL bar from being overwritten by screen frames for 8 seconds
+    this._urlLockUntil = Date.now() + 8000;
     
     // Ensure URL has protocol
     if (!url.startsWith('http://') && !url.startsWith('https://') && !url.startsWith('about:')) {
@@ -552,15 +643,60 @@ const RecorderUI = {
     }
     
     console.log('[RemoteViewer] Navigating to:', url);
-    WS.send({ type: 'remote_navigate', url });
-    App.toast(`🔄 Navigating to ${url}...`, 'info');
+    
+    // Update the URL bar to show the target URL immediately
+    const urlInput = document.getElementById('remote-url-input');
+    if (urlInput) urlInput.value = url;
 
-    // Also try via REST API as fallback (in case WebSocket navigate fails)
+    // Send via WebSocket (primary)
+    const wsSent = WS.send({ type: 'remote_navigate', url });
+    
+    // Also send via REST API (guaranteed delivery, fallback)
     fetch('/api/recorder/navigate', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ url }),
-    }).catch(() => {});
+    }).then(res => res.json()).then(data => {
+      if (data.success) {
+        console.log('[RemoteViewer] REST navigate confirmed');
+      } else {
+        console.warn('[RemoteViewer] REST navigate failed:', data.error);
+      }
+    }).catch((err) => {
+      console.warn('[RemoteViewer] REST navigate error:', err.message);
+    });
+
+    App.toast(`🔄 Navigating to ${url}...`, 'info');
+  },
+
+  /**
+   * Add a manual navigate step (without actually navigating the browser)
+   * Useful when URL bar navigation is stuck
+   */
+  addNavigateStep() {
+    const urlInput = document.getElementById('recorder-add-nav-url');
+    if (!urlInput) return;
+
+    let url = urlInput.value.trim();
+    if (!url) {
+      App.toast('Please enter a URL', 'warning');
+      return;
+    }
+    
+    if (!url.startsWith('http://') && !url.startsWith('https://')) {
+      url = 'https://' + url;
+    }
+
+    const navStep = {
+      action: 'navigate',
+      description: `Navigate to ${new URL(url).hostname}`,
+      params: { url },
+    };
+
+    this.recordedSteps.push(navStep);
+    this._renderRecordedSteps();
+    App.toast(`🌐 Added navigate step: ${url}`, 'success');
+    urlInput.value = '';
   },
 
   /**
@@ -667,6 +803,15 @@ const RecorderUI = {
       // Auto-approve navigation and wait steps (these are just URL changes)
       const autoApproveActions = ['navigate', 'wait'];
       if (autoApproveActions.includes(data.step.action)) {
+        // Dedup: skip if this navigate URL already matches the last recorded step
+        // (happens when user uses "Go + Add Step" which adds a manual step AND triggers server navigate)
+        if (data.step.action === 'navigate') {
+          const lastStep = this.recordedSteps[this.recordedSteps.length - 1];
+          if (lastStep && lastStep.action === 'navigate' && lastStep.params?.url === data.step.params?.url) {
+            console.log('[RecorderUI] Skipping duplicate navigate step:', data.step.params?.url);
+            return;
+          }
+        }
         this.recordedSteps.push(data.step);
         this._renderRecordedSteps();
       } else {

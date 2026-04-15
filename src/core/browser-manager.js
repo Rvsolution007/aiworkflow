@@ -1,7 +1,10 @@
 /**
  * AI Flow Builder — Browser Manager
- * Launches anti-detect headless browser using rebrowser-puppeteer-core.
+ * Launches anti-detect browser using rebrowser-puppeteer-core.
  * Manages browser lifecycle, profiles, and stealth configuration.
+ * 
+ * v2 — Enhanced anti-detection: removed bot flags, enabled extensions,
+ *       realistic Chrome args matching real desktop user.
  */
 
 const puppeteer = require('rebrowser-puppeteer-core');
@@ -59,7 +62,6 @@ class BrowserManager {
 
         // On Linux server, always use headless 'new' mode for recording
         // Chrome's "new" headless mode has FULL rendering — no Xvfb needed!
-        // page.screenshot() works perfectly, and user interacts via Remote Browser Viewer
         const useHeadless = process.platform === 'linux' ? 'new' : (isHeadless ? 'new' : false);
 
         if (process.platform === 'linux') {
@@ -191,15 +193,13 @@ class BrowserManager {
     // Kill zombie Chromium processes (Linux/Docker only)
     if (process.platform === 'linux') {
       try {
-        // Only kill processes older than 5 seconds (avoid killing freshly spawned ones)
         execSync('pkill -9 -f "chromium.*--type=" 2>/dev/null || true', { stdio: 'ignore' });
         execSync('pkill -9 -f "chromium.*--user-data-dir" 2>/dev/null || true', { stdio: 'ignore' });
-        // Wait for processes to fully die
         execSync('sleep 1', { stdio: 'ignore' });
       } catch (e) {}
     }
 
-    // Remove lock files (SingletonLock is a symlink — existsSync returns false for dangling ones)
+    // Remove lock files
     const lockFiles = ['SingletonLock', 'SingletonCookie', 'SingletonSocket'];
     for (const file of lockFiles) {
       try { fs.unlinkSync(path.join(this.profileDir, file)); } catch (e) {}
@@ -208,15 +208,22 @@ class BrowserManager {
   }
 
   /**
-   * Build Chrome launch arguments for Docker environment
+   * Build Chrome launch arguments — STEALTH OPTIMIZED
+   * 
+   * Key changes from v1:
+   * - REMOVED: --disable-extensions (biggest bot flag!)
+   * - REMOVED: --disable-gpu (suspicious on desktop)
+   * - REMOVED: --disable-background-networking (real users have it)
+   * - REMOVED: --disable-sync (real users have sync)
+   * - ADDED: Realistic flags matching a normal Chrome desktop session
    */
   _buildLaunchArgs() {
     const args = [
-      // Security
+      // ─── Security (required for Docker/headless) ───
       '--no-sandbox',
       '--disable-setuid-sandbox',
 
-      // Anti-detection
+      // ─── Anti-detection (CRITICAL) ───
       '--disable-blink-features=AutomationControlled',
       '--disable-infobars',
       '--no-first-run',
@@ -224,22 +231,37 @@ class BrowserManager {
       '--password-store=basic',
       '--use-mock-keychain',
 
-      // Performance & stability in Docker
-      '--disable-dev-shm-usage',
-      '--disable-gpu',
-      '--disable-software-rasterizer',
-      '--disable-background-networking',
-      '--disable-default-apps',
-      '--disable-extensions',
-      '--disable-sync',
-      '--disable-translate',
-      '--disable-features=IsolateOrigins,site-per-process,TranslateUI',
+      // ─── DO NOT disable extensions — real users have extensions! ───
+      // '--disable-extensions',    // REMOVED — this is the #1 bot flag
+      // '--disable-gpu',           // REMOVED — suspicious on desktop
+      // '--disable-background-networking',  // REMOVED — real browsers have it
+      // '--disable-sync',          // REMOVED — real browsers use sync
 
-      // Crash prevention
+      // ─── Performance (safe ones that don't flag as bot) ───
+      '--disable-dev-shm-usage',
+      '--disable-default-apps',
+      '--disable-translate',
+      '--disable-features=TranslateUI',
+
+      // ─── Realistic Chrome flags (what real users have) ───
+      '--enable-features=NetworkService,NetworkServiceInProcess',
+      '--disable-features=IsolateOrigins,site-per-process',
+      '--metrics-recording-only',  // Chrome sends telemetry — we look real
+
+      // ─── WebRTC leak prevention ───
+      '--enforce-webrtc-ip-permission-check',
+      '--disable-webrtc-hw-encoding',
+      '--disable-webrtc-hw-decoding',
+
+      // ─── Misc realism ───
+      '--disable-component-update',
+      '--disable-domain-reliability',  // Prevents telemetry that reveals automation
+
+      // ─── Crash prevention ───
       '--disable-crashpad',
       '--crash-dumps-dir=/tmp/.chromium/crashes',
 
-      // Profile
+      // ─── Profile ───
       `--user-data-dir=${this.profileDir}`,
       `--window-size=${this.profile.viewport.width},${this.profile.viewport.height}`,
       `--lang=${this.profile.locale}`,
@@ -255,6 +277,7 @@ class BrowserManager {
 
   /**
    * Apply stealth measures to avoid bot detection
+   * Enhanced v2 — adds focus/visibility simulation + better headers
    */
   async _applyStealthMeasures() {
     // Inject fingerprint overrides before any page loads
@@ -263,22 +286,51 @@ class BrowserManager {
     // Override timezone
     await this.page.emulateTimezone(this.profile.timezone);
 
-    // Set geolocation (India)
+    // Set geolocation (India — slight random offset)
     await this.page.setGeolocation({
       latitude: 28.6139 + (Math.random() * 0.1 - 0.05),
       longitude: 77.2090 + (Math.random() * 0.1 - 0.05),
       accuracy: 100,
     });
 
-    // Set extra HTTP headers
+    // ─── Dynamic sec-ch-ua based on profile's Chrome version ───
+    const chromeVersion = this.profile.userAgent.match(/Chrome\/(\d+)/)?.[1] || '135';
+    const secChUa = `"Chromium";v="${chromeVersion}", "Google Chrome";v="${chromeVersion}", "Not-A.Brand";v="24"`;
+
+    // Set extra HTTP headers (matching real Chrome exactly)
     await this.page.setExtraHTTPHeaders({
       'Accept-Language': this.profile.languages.join(','),
-      'sec-ch-ua': '"Chromium";v="131", "Not_A Brand";v="24"',
+      'sec-ch-ua': secChUa,
       'sec-ch-ua-mobile': '?0',
       'sec-ch-ua-platform': '"Windows"',
     });
 
-    logger.debug('Stealth measures applied');
+    // ─── Page visibility simulation ───
+    // Ensure document.visibilityState always reports "visible"
+    // (headless mode sometimes reports "hidden" which flags as bot)
+    await this.page.evaluateOnNewDocument(() => {
+      Object.defineProperty(document, 'visibilityState', {
+        get: () => 'visible',
+        configurable: true,
+      });
+      Object.defineProperty(document, 'hidden', {
+        get: () => false,
+        configurable: true,
+      });
+
+      // Prevent headless detection via document.hasFocus()
+      document.hasFocus = () => true;
+
+      // Prevent detection via Notification.permission
+      if (typeof Notification !== 'undefined') {
+        Object.defineProperty(Notification, 'permission', {
+          get: () => 'default',
+          configurable: true,
+        });
+      }
+    });
+
+    logger.debug('Stealth measures applied (v2 — enhanced)');
   }
 
   /**

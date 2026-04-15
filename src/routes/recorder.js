@@ -28,7 +28,7 @@ router.post('/start', async (req, res) => {
       },
     });
 
-    res.json({ success: result.success, message: result.message });
+    res.json({ success: result.success, message: result.message, alreadyRecording: result.alreadyRecording || false });
   } catch (err) {
     logger.error('Recorder start error', { error: err.message });
     res.status(500).json({ success: false, error: err.message });

@@ -175,6 +175,11 @@
                   <button class="btn btn-secondary" id="recorder-discard-btn" onclick="RecorderUI.discardRecording()" style="display:none">
                     🗑️ Discard
                   </button>
+                  <button class="btn btn-sm" id="recorder-force-reset-btn" onclick="RecorderUI.forceResetWithConfirm()" 
+                    style="background:rgba(239,68,68,0.15);color:#f87171;border:1px solid rgba(239,68,68,0.3);font-size:12px;padding:6px 12px" 
+                    title="Kill any stuck recording session">
+                    🔄 Force Reset
+                  </button>
                 </div>
 
                 <!-- Recording indicator -->
@@ -192,6 +197,15 @@
                     <span style="font-size:13px;color:var(--text-secondary)">seconds</span>
                     <button class="btn btn-secondary" style="padding:6px 14px;font-size:13px" onclick="RecorderUI.addWaitStep()">
                       ➕ Add Wait Step
+                    </button>
+                  </div>
+                  <!-- Add Navigate Step -->
+                  <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:10px;padding-top:10px;border-top:1px solid rgba(255,255,255,0.06)">
+                    <label class="input-label" style="margin:0;white-space:nowrap">🌐 Navigate:</label>
+                    <input type="url" class="input" id="recorder-add-nav-url" placeholder="https://example.com/..." 
+                      style="flex:1;min-width:200px;padding:6px 10px">
+                    <button class="btn btn-secondary" style="padding:6px 14px;font-size:13px" onclick="RecorderUI.navigateAndAddStep()" title="Navigate browser + add step">
+                      🚀 Go + Add Step
                     </button>
                   </div>
                 </div>
@@ -217,6 +231,13 @@
                 <div class="input-group">
                   <label class="input-label">Flow Name</label>
                   <input type="text" class="input" id="recorded-flow-name" placeholder="e.g., Cancel & Renew Subscription">
+                </div>
+                <div class="input-group" style="margin-bottom:12px">
+                  <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;color:var(--text-secondary)">
+                    <input type="checkbox" id="recorded-warmup-enabled" checked style="width:16px;height:16px;accent-color:#d97706">
+                    <span>🔥 Enable Session Warm-up</span>
+                    <span style="font-size:11px;color:var(--text-muted)">(browse Google/YouTube before running)</span>
+                  </label>
                 </div>
                 <div class="recorder-save-actions">
                   <button class="btn btn-success" onclick="RecorderUI.saveRecordedFlow()">💾 Save as Flow</button>

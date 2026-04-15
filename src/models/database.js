@@ -40,6 +40,7 @@ function migrate() {
       is_favorite INTEGER DEFAULT 0,
       timer_enabled INTEGER DEFAULT 0,
       timer_interval_min INTEGER DEFAULT 0,
+      warm_up_enabled INTEGER DEFAULT 1,
       profile_name TEXT DEFAULT 'default',
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
@@ -121,6 +122,14 @@ function migrate() {
     db.exec('ALTER TABLE flows ADD COLUMN timer_enabled INTEGER DEFAULT 0');
     db.exec('ALTER TABLE flows ADD COLUMN timer_interval_min INTEGER DEFAULT 0');
     db.exec('ALTER TABLE flows ADD COLUMN profile_name TEXT DEFAULT \'default\'');
+  }
+
+  // Migration: Add warm_up_enabled column
+  try {
+    db.prepare('SELECT warm_up_enabled FROM flows LIMIT 1').get();
+  } catch (e) {
+    logger.info('Migrating flows table: adding warm_up_enabled column...');
+    db.exec('ALTER TABLE flows ADD COLUMN warm_up_enabled INTEGER DEFAULT 1');
   }
 
   logger.info('Database migrations complete.');

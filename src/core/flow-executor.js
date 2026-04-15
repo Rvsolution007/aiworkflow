@@ -2,11 +2,14 @@
  * AI Flow Builder — Flow Executor
  * The heart of the system. Executes automation flows step by step.
  * Features: anti-detect browsing, self-healing, live progress reporting.
+ * 
+ * v2 — Enhanced with session warm-up, natural idle breaks, tab switching.
  */
 
 const BrowserManager = require('./browser-manager');
 const HumanBehavior = require('./human-behavior');
 const SelfHealer = require('./self-healer');
+const sessionWarmer = require('./session-warmer');
 const Credential = require('../models/Credential');
 const Execution = require('../models/Execution');
 const logger = require('../utils/logger');
@@ -62,6 +65,17 @@ class FlowExecutor {
       this.human = new HumanBehavior(page);
       await this.human.init();
 
+      // 2.5. Session warm-up — browse naturally before the actual task
+      // This makes Google see us as a real user who browses around
+      if (flow.warmUpEnabled !== false && sessionWarmer.needsWarmup()) {
+        this._emit('status', { status: 'running', message: '🔥 Session warm-up — browsing like a real user...' });
+        await sessionWarmer.warmUp(page, this.human, (data) => {
+          this._emit('status', { status: 'running', message: data.message });
+        });
+        // Save warm-up cookies
+        await SessionManager.saveCookies(profileName, page).catch(() => {});
+      }
+
       // 3. Execute each step
       for (let i = 0; i < flow.steps.length; i++) {
         if (this._cancelled) {
@@ -90,6 +104,26 @@ class FlowExecutor {
           description: step.description,
           status: 'running',
         });
+
+        // ─── Natural idle break between steps (v2 anti-detection) ───
+        // Real humans don't execute steps back-to-back like a machine
+        if (i > 0 && Math.random() < 0.35) {
+          // 35% chance of a natural break between steps
+          const breakDuration = randomInt(3000, 12000);
+          logger.debug(`Natural break between steps: ${Math.round(breakDuration / 1000)}s`);
+          this._emit('step', {
+            step: i + 1,
+            total: flow.steps.length,
+            status: 'idle',
+            message: 'Natural browsing pause...',
+          });
+          await this.human.naturalIdle(2000, breakDuration);
+        }
+
+        // Random tab switch simulation (10% chance between steps)
+        if (i > 0 && Math.random() < 0.10) {
+          await this.human.simulateTabSwitch();
+        }
 
         try {
           // Check browser is still alive
@@ -214,6 +248,11 @@ class FlowExecutor {
       return { status: 'failed', error: err.message, duration: totalDuration };
 
     } finally {
+      // Cleanup human behavior engine
+      if (this.human) {
+        this.human.destroy();
+        this.human = null;
+      }
       // Always close browser
       await this.browserManager.close();
     }

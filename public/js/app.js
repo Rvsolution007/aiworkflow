@@ -296,6 +296,7 @@ const App = {
     grid.innerHTML = this.flows.map(flow => {
       const timerStatus = this._timerStatuses[flow.id];
       const timerWidgetHtml = this._buildTimerWidget(flow.id, timerStatus);
+      const warmUpOn = flow.warmUpEnabled !== false;
 
       return `
         <div class="flow-card" onclick="App.viewFlow(${flow.id})">
@@ -308,6 +309,11 @@ const App = {
             <div class="flow-card-desc">${this._escapeHtml(flow.description || 'No description')}</div>
             <div class="flow-card-meta">
               <div class="flow-card-steps">⚡ ${flow.steps.length} steps</div>
+              <div class="flow-card-warmup ${warmUpOn ? 'warmup-on' : 'warmup-off'}" 
+                   onclick="event.stopPropagation(); App.toggleWarmUp(${flow.id}, ${!warmUpOn})" 
+                   title="${warmUpOn ? 'Session warm-up ON — click to disable' : 'Session warm-up OFF — click to enable'}">
+                🔥 ${warmUpOn ? 'Warm-up ON' : 'Warm-up OFF'}
+              </div>
               <div class="flow-card-category">${flow.category || 'general'}</div>
             </div>
           </div>
@@ -618,6 +624,29 @@ const App = {
     if (currentValue) {
       const exists = Array.from(select.options).some(o => o.value === currentValue);
       if (exists) select.value = currentValue;
+    }
+  },
+
+  /**
+   * Toggle warm-up enabled/disabled for a flow
+   */
+  async toggleWarmUp(flowId, enabled) {
+    try {
+      const res = await fetch(`/api/flows/${flowId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ warmUpEnabled: enabled }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        // Update local cache
+        const flow = this.flows.find(f => f.id == flowId);
+        if (flow) flow.warmUpEnabled = enabled;
+        this._renderFlows();
+        this.toast(`Session warm-up ${enabled ? 'enabled 🔥' : 'disabled'}`, enabled ? 'success' : 'info');
+      }
+    } catch (err) {
+      this.toast('Failed to toggle warm-up', 'error');
     }
   },
 

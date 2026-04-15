@@ -105,12 +105,12 @@ router.get('/:id', (req, res) => {
  */
 router.post('/', (req, res) => {
   try {
-    const { name, description, steps, category } = req.body;
+    const { name, description, steps, category, warmUpEnabled } = req.body;
     if (!name || !steps) {
       return res.status(400).json({ error: 'name and steps are required' });
     }
 
-    const flow = Flow.create({ name, description, steps, category });
+    const flow = Flow.create({ name, description, steps, category, warmUpEnabled });
     res.status(201).json({ success: true, flow });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -123,9 +123,9 @@ router.post('/', (req, res) => {
  */
 router.put('/:id', (req, res) => {
   try {
-    const { name, description, steps, category, is_favorite } = req.body;
+    const { name, description, steps, category, is_favorite, warmUpEnabled } = req.body;
     const flow = Flow.update(parseInt(req.params.id), {
-      name, description, steps, category, is_favorite,
+      name, description, steps, category, is_favorite, warmUpEnabled,
     });
     if (!flow) return res.status(404).json({ error: 'Flow not found' });
     res.json({ success: true, flow });
