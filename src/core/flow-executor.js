@@ -65,16 +65,7 @@ class FlowExecutor {
       this.human = new HumanBehavior(page);
       await this.human.init();
 
-      // 2.5. Session warm-up — browse naturally before the actual task
-      // This makes Google see us as a real user who browses around
-      if (flow.warmUpEnabled !== false && sessionWarmer.needsWarmup()) {
-        this._emit('status', { status: 'running', message: '🔥 Session warm-up — browsing like a real user...' });
-        await sessionWarmer.warmUp(page, this.human, (data) => {
-          this._emit('status', { status: 'running', message: data.message });
-        });
-        // Save warm-up cookies
-        await SessionManager.saveCookies(profileName, page).catch(() => {});
-      }
+      // NOTE: Warm-up moved to AFTER successful flow completion (background)
 
       // 3. Execute each step
       for (let i = 0; i < flow.steps.length; i++) {
@@ -225,6 +216,11 @@ class FlowExecutor {
       // Flow completed!
       const totalDuration = Date.now() - startTime;
       if (!this._cancelled) {
+        // Save final session cookies before closing
+        try {
+          await SessionManager.saveCookies(profileName, page);
+        } catch (e) {}
+
         Execution.updateStatus(executionId, 'completed');
         this._emit('status', {
           status: 'completed',
@@ -232,6 +228,21 @@ class FlowExecutor {
           duration: formatDuration(totalDuration),
         });
         logger.info(`Flow "${flow.name}" completed`, { duration: formatDuration(totalDuration) });
+
+        // Background warm-up AFTER successful completion (fire-and-forget)
+        // Runs in a separate browser session so it doesn't block anything
+        if (flow.warmUpEnabled !== false && sessionWarmer.needsWarmup()) {
+          logger.info(`[WARMER] Scheduling background warm-up after successful flow "${flow.name}"`);
+          setImmediate(async () => {
+            try {
+              const warmBrowser = new BrowserManager();
+              await sessionWarmer.warmUpDuringBreak(warmBrowser, profileName);
+              logger.info('[WARMER] Background post-flow warm-up completed');
+            } catch (err) {
+              logger.warn(`[WARMER] Background warm-up failed (non-fatal): ${err.message}`);
+            }
+          });
+        }
       }
 
       return { status: 'completed', duration: totalDuration };
