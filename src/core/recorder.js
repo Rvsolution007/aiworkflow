@@ -668,15 +668,20 @@ class Recorder {
     try {
       await this.page.keyboard.press(key);
 
-      // Server-side capture
-      const keyEvent = {
-        type: 'keyboard',
-        timestamp: Date.now(),
-        key,
-        url: this.page.url(),
-        _serverCaptured: true,
-      };
-      this._handleRecordedEvent(JSON.stringify(keyEvent));
+      // Only record MEANINGFUL keys as flow steps.
+      // Keys like Backspace, Delete, Arrow keys are part of typing — 
+      // they are sent to the browser above but should NOT be recorded as separate steps.
+      const recordableKeys = ['Enter', 'Tab', 'Escape'];
+      if (recordableKeys.includes(key)) {
+        const keyEvent = {
+          type: 'keyboard',
+          timestamp: Date.now(),
+          key,
+          url: this.page.url(),
+          _serverCaptured: true,
+        };
+        this._handleRecordedEvent(JSON.stringify(keyEvent));
+      }
 
       logger.debug(`Remote key press: ${key}`);
     } catch (err) {
@@ -929,9 +934,22 @@ class Recorder {
         }
       }
 
-      // Skip keyboard Enter right after type (already part of the type flow)
-      if (event.type === 'keyboard' && event.key === 'Enter' && lastStep2?.type === 'type') {
-        // Don't skip — Enter is important, but don't create extra step
+      // ─── Keyboard event filtering ───
+      if (event.type === 'keyboard') {
+        // Only record meaningful action keys — NOT typing-assist keys
+        const meaningfulKeys = ['Enter', 'Tab', 'Escape'];
+        if (!meaningfulKeys.includes(event.key)) {
+          logger.debug(`Skipping non-meaningful keyboard event: ${event.key}`);
+          return;
+        }
+
+        // Skip duplicate keyboard events within 1s (browser-side + server-side both fire)
+        if (lastStep2 && lastStep2.type === 'keyboard' && lastStep2.key === event.key) {
+          if ((event.timestamp - lastStep2.timestamp) < 1000) {
+            logger.debug(`Skipping duplicate keyboard event: ${event.key}`);
+            return;
+          }
+        }
       }
 
       this.recordedSteps.push(event);
