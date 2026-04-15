@@ -317,7 +317,8 @@ class Recorder {
               const popupPage = await target.page();
               if (!popupPage) return;
               
-              logger.info(`🔲 Popup window detected: ${target.url()}`);
+              const popupUrl = target.url();
+              logger.info(`🔲 Popup window detected: ${popupUrl}`);
               
               // Save the main page reference
               if (!this._mainPage) {
@@ -334,6 +335,31 @@ class Recorder {
                 });
               } catch (e) {} // May already be exposed
               await popupPage.evaluate(RECORDING_SCRIPT).catch(() => {});
+
+              // Track popup URL changes via framenavigated
+              popupPage.on('framenavigated', (frame) => {
+                if (frame === popupPage.mainFrame()) {
+                  const newUrl = frame.url();
+                  logger.info(`🔲 Popup navigated to: ${newUrl}`);
+                  // Re-inject recording script after navigation
+                  setTimeout(async () => {
+                    try { await popupPage.evaluate(RECORDING_SCRIPT); } catch (e) {}
+                  }, 1500);
+                }
+              });
+
+              // ─── Handle processing/redirect pages (Google Payments liftoff, etc.) ───
+              // These pages show a loading spinner and eventually redirect.
+              // If stuck, we auto-refresh to unstick them.
+              const isProcessingPage = popupUrl.includes('/liftoff') ||
+                                       popupUrl.includes('/processing') ||
+                                       popupUrl.includes('/redirect') ||
+                                       popupUrl.includes('payments.google.com');
+              
+              if (isProcessingPage) {
+                logger.info(`🔄 Processing page detected: ${popupUrl} — waiting for redirect...`);
+                this._waitForProcessingRedirect(popupPage, popupUrl);
+              }
               
               // Notify frontend
               if (this.onEvent) {
@@ -341,8 +367,8 @@ class Recorder {
                   type: 'recorder_event',
                   step: {
                     action: 'navigate',
-                    description: `Popup opened: ${target.url()}`,
-                    params: { url: target.url() },
+                    description: `Popup opened: ${popupUrl}`,
+                    params: { url: popupUrl },
                   },
                   stepIndex: this.recordedSteps.length,
                 });
@@ -1071,6 +1097,65 @@ class Recorder {
         // Page might be navigating
       }
     }, 3000);
+  }
+
+  /**
+   * Wait for a processing/redirect page (like Google Payments liftoff) to finish loading.
+   * Polls URL every 5 seconds. If stuck for 30s, auto-refreshes the page.
+   * Max wait: 90 seconds. Non-blocking (fire-and-forget).
+   */
+  async _waitForProcessingRedirect(popupPage, originalUrl) {
+    const maxWaitMs = 90000; // 90 seconds max
+    const refreshAfterMs = 30000; // Refresh if stuck after 30 seconds
+    const pollIntervalMs = 5000; // Check every 5 seconds
+    const startTime = Date.now();
+    let hasRefreshed = false;
+
+    const poll = async () => {
+      if (!this.isRecording || !this.browserManager?.isAlive()) return;
+
+      try {
+        const currentUrl = popupPage.url();
+        const elapsed = Date.now() - startTime;
+
+        // If URL changed from original liftoff URL, redirect happened — done!
+        if (currentUrl !== originalUrl && currentUrl !== 'about:blank') {
+          logger.info(`✅ Processing page redirected to: ${currentUrl}`);
+          // Re-inject recording script
+          try { await popupPage.evaluate(RECORDING_SCRIPT); } catch (e) {}
+          return; // Success — stop polling
+        }
+
+        // Max wait exceeded
+        if (elapsed > maxWaitMs) {
+          logger.warn(`⚠️ Processing page still stuck after ${Math.round(elapsed / 1000)}s — giving up auto-wait`);
+          return;
+        }
+
+        // Auto-refresh if stuck for 30s (but only once)
+        if (elapsed > refreshAfterMs && !hasRefreshed) {
+          hasRefreshed = true;
+          logger.info(`🔄 Processing page stuck for ${Math.round(elapsed / 1000)}s — auto-refreshing...`);
+          try {
+            await popupPage.reload({ waitUntil: 'domcontentloaded', timeout: 20000 });
+            logger.info('🔄 Auto-refresh completed');
+            // Re-inject recording script
+            try { await popupPage.evaluate(RECORDING_SCRIPT); } catch (e) {}
+          } catch (e) {
+            logger.warn(`Auto-refresh failed: ${e.message}`);
+          }
+        }
+
+        // Continue polling
+        setTimeout(poll, pollIntervalMs);
+      } catch (err) {
+        // Page might be closed or navigating — stop polling
+        logger.debug(`Processing page poll stopped: ${err.message}`);
+      }
+    };
+
+    // Start polling after initial 5 second wait (give page time to load normally)
+    setTimeout(poll, pollIntervalMs);
   }
 
   /**

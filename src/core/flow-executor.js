@@ -336,6 +336,12 @@ class FlowExecutor {
       default:
         logger.warn(`Unknown action: ${step.action}`);
     }
+
+    // After any step, check if we landed on a processing/redirect page
+    // (click steps can trigger payment popups that redirect through liftoff)
+    if (step.action === 'click' || step.action === 'navigate') {
+      await this._handleProcessingPage(page);
+    }
   }
 
   async _stepNavigate(page, params) {
@@ -369,6 +375,9 @@ class FlowExecutor {
     // Dismiss any popup overlays
     await this._dismissOverlayPopups(page);
 
+    // Handle Google Payments processing/redirect pages (liftoff, etc.)
+    await this._handleProcessingPage(page);
+
     // Save cookies after each navigate step (incremental session persistence)
     try {
       const SessionManager = require('./session-manager');
@@ -377,6 +386,75 @@ class FlowExecutor {
     } catch (e) {}
 
     if (this.human) await this.human.warmUp();
+  }
+
+  /**
+   * Handle Google Payments processing/redirect pages (liftoff, etc.)
+   * These pages show a loading spinner and auto-redirect. If stuck, we refresh.
+   */
+  async _handleProcessingPage(page) {
+    try {
+      const currentUrl = page.url();
+      const isProcessingPage = currentUrl.includes('/liftoff') ||
+                                (currentUrl.includes('payments.google.com') && 
+                                 (currentUrl.includes('/gp/') || currentUrl.includes('/processing')));
+
+      if (!isProcessingPage) return;
+
+      logger.info(`🔄 Payment processing page detected: ${currentUrl} — waiting for redirect...`);
+      this._emit('step', { status: 'running', message: '💳 Payment page processing — waiting for redirect...' });
+
+      const maxWaitMs = 90000; // 90 seconds max
+      const refreshAfterMs = 30000; // Refresh if stuck after 30s
+      const pollIntervalMs = 3000; // Check every 3 seconds
+      const startTime = Date.now();
+      let hasRefreshed = false;
+
+      while (Date.now() - startTime < maxWaitMs) {
+        await sleep(pollIntervalMs);
+
+        const newUrl = page.url();
+        // Check if URL changed (redirect happened)
+        if (newUrl !== currentUrl && newUrl !== 'about:blank') {
+          logger.info(`✅ Processing page redirected to: ${newUrl}`);
+          await sleep(2000); // Wait for new page to settle
+          return;
+        }
+
+        // Check if page has actual content now (not just spinner)
+        const hasContent = await page.evaluate(() => {
+          const body = document.body;
+          if (!body) return false;
+          // Check if there are interactive elements (buttons, forms)
+          const buttons = document.querySelectorAll('button, input[type="submit"], a[role="button"]');
+          return buttons.length > 2; // More than just loading UI
+        }).catch(() => false);
+
+        if (hasContent) {
+          logger.info('✅ Processing page loaded with interactive content');
+          return;
+        }
+
+        const elapsed = Date.now() - startTime;
+
+        // Auto-refresh if stuck for 30s
+        if (elapsed > refreshAfterMs && !hasRefreshed) {
+          hasRefreshed = true;
+          logger.info(`🔄 Processing page stuck for ${Math.round(elapsed / 1000)}s — refreshing...`);
+          this._emit('step', { status: 'running', message: '🔄 Payment page stuck — refreshing...' });
+          try {
+            await page.reload({ waitUntil: 'domcontentloaded', timeout: 20000 });
+            await sleep(3000);
+          } catch (e) {
+            logger.warn(`Processing page refresh failed: ${e.message}`);
+          }
+        }
+      }
+
+      logger.warn('⚠️ Processing page did not redirect within 90s — continuing anyway');
+    } catch (err) {
+      logger.debug(`Processing page handler error (non-fatal): ${err.message}`);
+    }
   }
 
   /**
